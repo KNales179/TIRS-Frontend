@@ -1,0 +1,292 @@
+/* 1) Global tokens */
+:root {
+  --sidebar-w: 280px;
+
+  --bg: #f8f9fb;
+  --surface: #ffffff;
+  --border: #e9ecef;
+  --text: #111827;
+  --muted: #6b7280;
+
+  --primary: #0d6efd; /* you can change later */
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.08);
+}
+
+/* 2) Page base */
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* 3) Layout helpers */
+.app-shell {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.app-content {
+  padding: 16px;
+}
+
+@media (min-width: 768px) {
+  .app-content { padding: 24px; }
+}
+
+/* Desktop offset for fixed sidebar */
+@media (min-width: 992px) {
+  .with-sidebar {
+    margin-left: var(--sidebar-w);
+  }
+}
+
+/* 4) Sidebar */
+.sidebar {
+  width: var(--sidebar-w);
+  height: 100vh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.sidebar-brand {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.sidebar-links {
+  padding: 12px;
+}
+
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* 5) Reusable surfaces */
+.card-soft {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+}
+
+/* 6) Buttons (optional override styles) */
+.btn-soft {
+  border-radius: 14px !important;
+}
+
+.btn-primary-soft {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 14px !important;
+}
+
+.btn-primary-soft:hover {
+  filter: brightness(0.95);
+}
+
+/* 7) Tables */
+.table-soft thead th {
+  font-size: 12px;
+  text-transform: none;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.table-soft tbody td {
+  border-top: 1px solid #f1f3f5 !important;
+}
+
+/* =========================
+   Login Page
+   ========================= */
+
+.auth-shell {
+  min-height: 100vh;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.auth-card {
+  width: min(1100px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.auth-left {
+  background: #ffffff;
+  padding: 40px 32px;
+}
+
+.auth-right {
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+}
+
+.auth-logo {
+  width: 86px;
+  height: 86px;
+  object-fit: contain;
+}
+
+.auth-title {
+  margin-top: 12px;
+  font-weight: 700;
+  font-size: 22px;
+}
+
+.auth-input {
+  border-radius: 12px !important;
+  background: #f6f7fb !important;
+  border: 1px solid #eef0f5 !important;
+  padding: 12px 14px !important;
+}
+
+.auth-btn {
+  border-radius: 12px !important;
+  padding: 12px 14px !important;
+  font-weight: 600 !important;
+}
+
+.auth-link {
+  text-decoration: none;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 991px) {
+  .auth-right {
+    display: none; /* hide illustration on small screens */
+  }
+  .auth-left {
+    padding: 28px 20px;
+  }
+}
+
+/* icons */
+/* Icons */
+.bi {
+  vertical-align: -0.125em;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =========================
+   TFRO TABLE THEME
+   ========================= */
+
+:root {
+  --tfro-primary: #5b63ff;
+  --tfro-primary-soft: #eef0ff;
+  --tfro-border: #e9e9ef;
+  --tfro-text-muted: #6b7280;
+  --tfro-danger: #ef4444;
+  --tfro-success: #22c55e;
+}
+
+/* table wrapper */
+.tfro-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* table header */
+.tfro-table thead th {
+  background: var(--tfro-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 12px 14px;
+  border: none;
+}
+
+/* rounded header corners */
+.tfro-table thead th:first-child {
+  border-top-left-radius: 12px;
+}
+.tfro-table thead th:last-child {
+  border-top-right-radius: 12px;
+}
+
+/* body cells */
+.tfro-table tbody td {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #111;
+  border-bottom: 1px solid var(--tfro-border);
+}
+
+/* zebra rows */
+.tfro-table tbody tr:nth-child(even) {
+  background: #fafafa;
+}
+
+/* hover */
+.tfro-table tbody tr:hover {
+  background: var(--tfro-primary-soft);
+}
+
+/* status pills */
+.tfro-badge-danger {
+  background: #ffe8ea;
+  color: var(--tfro-danger);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tfro-badge-success {
+  background: #e8fff1;
+  color: var(--tfro-success);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+
+
+/* printable tables */
+@media print {
+  .tfro-table thead th {
+    background: #000 !important;
+    color: #fff !important;
+  }
+}
