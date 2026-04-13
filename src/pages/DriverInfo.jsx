@@ -1,149 +1,301 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { driversMock } from "../data/driversMock";
 
-function openPrintWindow(title, htmlBody) {
-  const w = window.open("", "_blank", "width=900,height=650");
-  if (!w) return;
+function normalizeDriverType(type) {
+  const t = String(type || "").trim().toUpperCase();
 
-  w.document.open();
-  w.document.write(`
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <title>${title}</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
-          h1,h2,h3 { margin: 0 0 12px 0; }
-          .muted { color: #666; font-size: 12px; }
-          .card { border: 1px solid #e9e9ef; border-radius: 16px; padding: 18px; }
-          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-          .row { display: grid; grid-template-columns: 1fr; gap: 6px; }
-          .label { font-size: 12px; color: #666; }
-          .value { background: #f4f5f7; padding: 12px 14px; border-radius: 12px; }
-          .span2 { grid-column: 1 / -1; }
-          table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-          th { text-align: left; font-size: 12px; color:#fff; background: #5b63ff; padding: 10px 12px; }
-          td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 13px; }
-          .right { text-align: right; }
-          .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; }
-          .badge-danger { background: #ffe8ea; color: #b42318; }
-          .badge-ok { background: #e8fff1; color: #027a48; }
-          .header { display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px; }
-          .avatarWrap { display:flex; justify-content:center; }
-          .avatar { width: 160px; height: 160px; border-radius: 999px; overflow:hidden; background:#f3d2ff; display:flex; align-items:center; justify-content:center; }
-          .avatar img { width:100%; height:100%; object-fit:cover; }
-        </style>
-      </head>
-      <body>
-        ${htmlBody}
-      </body>
-    </html>
-  `);
-  w.document.close();
-  w.focus();
-  w.print();
-  w.close();
+  if (
+    t === "REGISTERED" ||
+    t === "WITH FRANCHISE" ||
+    t === "FRANCHISED" ||
+    t === "FOR HAILING"
+  ) {
+    return "WITH FRANCHISE";
+  }
+
+  if (t === "SPECIAL" || t === "SPECIAL FRANCHISE") {
+    return "SPECIAL FRANCHISE";
+  }
+
+  if (t === "COLORUM") return "COLORUM";
+  if (t === "TEMPORARY") return "TEMPORARY";
+
+  return t || "—";
 }
 
-function Field({ label, value, span2 }) {
+function getDriverTypeBadge(type) {
+  const normalized = normalizeDriverType(type);
+
+  if (normalized === "WITH FRANCHISE") {
+    return (
+      <span className="badge rounded-pill bg-success-subtle text-success-emphasis px-3 py-2">
+        WITH FRANCHISE
+      </span>
+    );
+  }
+
+  if (normalized === "SPECIAL FRANCHISE") {
+    return (
+      <span className="badge rounded-pill bg-primary-subtle text-primary-emphasis px-3 py-2">
+        SPECIAL FRANCHISE
+      </span>
+    );
+  }
+
+  if (normalized === "COLORUM") {
+    return (
+      <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis px-3 py-2">
+        COLORUM
+      </span>
+    );
+  }
+
+  if (normalized === "TEMPORARY") {
+    return (
+      <span className="badge rounded-pill bg-info-subtle text-info-emphasis px-3 py-2">
+        TEMPORARY
+      </span>
+    );
+  }
+
   return (
-    <div className={span2 ? "col-12" : "col-md-6"}>
-      <div className="text-muted small mb-1">{label}</div>
-      <div className="bg-light border-0 rounded-4 px-3 py-3">{value || "—"}</div>
-    </div>
+    <span className="badge rounded-pill bg-secondary-subtle text-secondary-emphasis px-3 py-2">
+      {normalized}
+    </span>
   );
+}
+
+function getVehicleStatusBadge(status) {
+  const s = String(status || "").toLowerCase();
+
+  if (s === "unavailable" || s === "impounded" || s === "colorum") {
+    return (
+      <span className="badge rounded-pill bg-danger-subtle text-danger-emphasis">
+        {status || "—"}
+      </span>
+    );
+  }
+
+  if (s === "temporary") {
+    return (
+      <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
+        {status || "—"}
+      </span>
+    );
+  }
+
+  return (
+    <span className="badge rounded-pill bg-success-subtle text-success-emphasis">
+      {status || "—"}
+    </span>
+  );
+}
+
+function getViolationStatusBadge(status) {
+  const s = String(status || "").toLowerCase();
+
+  if (["done", "paid", "settled"].includes(s)) {
+    return (
+      <span className="badge rounded-pill bg-success-subtle text-success-emphasis">
+        {status}
+      </span>
+    );
+  }
+
+  return (
+    <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
+      {status || "—"}
+    </span>
+  );
+}
+
+function formatMoney(value) {
+  if (value == null || value === "") return "—";
+  return `₱${Number(value).toLocaleString("en-PH")}`;
+}
+
+function computeVehicleViolationSummary(vehicle) {
+  const violations = vehicle?.violations || [];
+  const total = violations.length;
+  const unresolved = violations.filter((v) => {
+    const s = String(v.status || "").toLowerCase();
+    return !["done", "paid", "settled"].includes(s);
+  }).length;
+
+  return { total, unresolved };
 }
 
 export default function DriverInfo() {
   const { id } = useParams();
   const nav = useNavigate();
 
-  const driver = useMemo(() => driversMock.find((d) => String(d.id) === String(id)), [id]);
+  const driver = useMemo(
+    () => driversMock.find((d) => String(d.id) === String(id)),
+    [id]
+  );
 
   const [isEdit, setIsEdit] = useState(false);
   const [draft, setDraft] = useState(() => driver || null);
   const [selectedVehicleIndex, setSelectedVehicleIndex] = useState(0);
+  const [selectedFranchiseId, setSelectedFranchiseId] = useState("");
 
-  if (!driver) {
+  useEffect(() => {
+    setDraft(driver);
+    setIsEdit(false);
+    setSelectedVehicleIndex(0);
+    setSelectedFranchiseId(driver?.franchises?.[0]?.id || "");
+  }, [driver]);
+
+  useEffect(() => {
+    const styleId = "driver-info-print-style";
+
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.innerHTML = `
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+
+          #print-driver-info,
+          #print-driver-info * {
+            visibility: visible;
+          }
+
+          #print-driver-info {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            background: #fff !important;
+          }
+
+          .no-print {
+            display: none !important;
+          }
+
+          .card,
+          .card-body {
+            box-shadow: none !important;
+            border: 0 !important;
+          }
+
+          table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+          }
+
+          th, td {
+            border: 1px solid #ddd !important;
+          }
+
+          .table-responsive {
+            overflow: visible !important;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }, []);
+
+  if (!driver || !draft) {
     return (
-      <div className="card rounded-4 shadow-sm">
+      <div className="card rounded-4 shadow-sm border-0">
         <div className="card-body">Driver not found.</div>
       </div>
     );
   }
 
-  React.useEffect(() => {
-    setDraft(driver);
-    setIsEdit(false);
-    setSelectedVehicleIndex(0);
-  }, [driver]);
-
+  const driverType = normalizeDriverType(draft.type);
+  const isColorum = driverType === "COLORUM";
   const vehicles = draft?.vehicles || [];
-  const selectedVehicle = vehicles[selectedVehicleIndex] || null;
+  const franchises = draft?.franchises || [];
+  const hasMultipleFranchises = !isColorum && franchises.length >= 2;
+
+  const selectedFranchise = !isColorum
+    ? franchises.find((f) => f.id === selectedFranchiseId) || franchises[0] || null
+    : null;
+
+  const resolvedVehicleIndex = !isColorum
+    ? selectedFranchise?.vehicleIndex ?? 0
+    : selectedVehicleIndex;
+
+  const selectedVehicle = vehicles[resolvedVehicleIndex] || null;
   const violations = selectedVehicle?.violations || [];
 
-  function set(k) {
-    return (e) => setDraft((p) => ({ ...p, [k]: e.target.value }));
+  function setField(key) {
+    return (e) => setDraft((prev) => ({ ...prev, [key]: e.target.value }));
   }
 
-  function setVehicle(index, k) {
+  function setVehicle(index, key) {
     return (e) =>
-      setDraft((p) => {
-        const nextVehicles = [...(p.vehicles || [])];
+      setDraft((prev) => {
+        const nextVehicles = [...(prev.vehicles || [])];
         nextVehicles[index] = {
           ...(nextVehicles[index] || {}),
-          [k]: e.target.value,
+          [key]: e.target.value,
         };
-        return { ...p, vehicles: nextVehicles };
+        return { ...prev, vehicles: nextVehicles };
       });
   }
 
   function handlePrint() {
-    const el = document.getElementById("print-driver-info");
-    if (!el) return;
-    openPrintWindow("Driver Information", el.innerHTML);
+    window.print();
   }
 
   function handleSave() {
     setIsEdit(false);
-    alert("Saved (mock). Next step: connect to backend or state store.");
+    alert("Saved (mock). Next step: connect to backend or shared state.");
   }
 
-  function getVehicleStatusBadge(status) {
-    const s = String(status || "").toLowerCase();
-    if (s === "unavailable" || s === "impounded" || s === "colorum") {
-      return <span className="badge rounded-pill bg-danger-subtle text-danger-emphasis">{status}</span>;
-    }
-    return <span className="badge rounded-pill bg-success-subtle text-success-emphasis">{status || "—"}</span>;
+  function handlePhotoUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const photoUrl = URL.createObjectURL(file);
+    setDraft((prev) => ({
+      ...prev,
+      photoUrl,
+    }));
   }
 
-  function getViolationStatusBadge(status) {
-    const s = String(status || "").toLowerCase();
-    if (s === "done" || s === "paid" || s === "settled") {
-      return <span className="badge rounded-pill bg-success-subtle text-success-emphasis">{status}</span>;
-    }
-    return <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">{status || "—"}</span>;
+  function handleFranchiseChange(e) {
+    setSelectedFranchiseId(e.target.value);
+  }
+
+  function handleVehicleSelect(index) {
+    setSelectedVehicleIndex(index);
   }
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between mb-3">
+      <div className="d-flex align-items-center justify-content-between mb-3 no-print">
         <h1 className="h4 fw-bold mb-0">Driver’s Information</h1>
 
-        <div className="d-flex gap-2 no-print">
-          <button className="btn btn-outline-primary rounded-4" onClick={handlePrint} type="button">
+        <div className="d-flex gap-2">
+          <button
+            className="btn btn-outline-primary rounded-4"
+            onClick={handlePrint}
+            type="button"
+            title="Print"
+          >
             <i className="bi bi-printer" />
           </button>
-          <button className="btn btn-outline-primary rounded-4" onClick={() => nav(-1)} type="button">
+
+          <button
+            className="btn btn-outline-primary rounded-4"
+            onClick={() => nav(-1)}
+            type="button"
+            title="Back"
+          >
             <i className="bi bi-arrow-left" />
           </button>
         </div>
       </div>
 
-      <div className="card rounded-4 shadow-sm">
+      <div className="card rounded-4 shadow-sm border-0">
         <div className="card-body" id="print-driver-info">
           <div className="row g-4 align-items-start">
             <div className="col-lg-8">
@@ -151,22 +303,15 @@ export default function DriverInfo() {
                 <div className="col-md-6">
                   <div className="text-muted small mb-1">Driver’s Name</div>
                   {isEdit ? (
-                    <input className="form-control bg-light border-0 rounded-4 px-3 py-3" value={draft.name || ""} onChange={set("name")} />
-                  ) : (
-                    <div className="bg-light border-0 rounded-4 px-3 py-3">{driver.name || "—"}</div>
-                  )}
-                </div>
-
-                <div className="col-md-6">
-                  <div className="text-muted small mb-1">Franchise Number</div>
-                  {isEdit ? (
                     <input
                       className="form-control bg-light border-0 rounded-4 px-3 py-3"
-                      value={draft.franchiseNo || ""}
-                      onChange={set("franchiseNo")}
+                      value={draft.name || ""}
+                      onChange={setField("name")}
                     />
                   ) : (
-                    <div className="bg-light border-0 rounded-4 px-3 py-3">{driver.franchiseNo || "—"}</div>
+                    <div className="bg-light border-0 rounded-4 px-3 py-3">
+                      {draft.name || "—"}
+                    </div>
                   )}
                 </div>
 
@@ -176,10 +321,12 @@ export default function DriverInfo() {
                     <input
                       className="form-control bg-light border-0 rounded-4 px-3 py-3"
                       value={draft.operatorName || ""}
-                      onChange={set("operatorName")}
+                      onChange={setField("operatorName")}
                     />
                   ) : (
-                    <div className="bg-light border-0 rounded-4 px-3 py-3">{driver.operatorName || "—"}</div>
+                    <div className="bg-light border-0 rounded-4 px-3 py-3">
+                      {draft.operatorName || "—"}
+                    </div>
                   )}
                 </div>
 
@@ -189,12 +336,57 @@ export default function DriverInfo() {
                     <input
                       className="form-control bg-light border-0 rounded-4 px-3 py-3"
                       value={draft.contact || ""}
-                      onChange={set("contact")}
+                      onChange={setField("contact")}
                     />
                   ) : (
-                    <div className="bg-light border-0 rounded-4 px-3 py-3">{driver.contact || "—"}</div>
+                    <div className="bg-light border-0 rounded-4 px-3 py-3">
+                      {draft.contact || "—"}
+                    </div>
                   )}
                 </div>
+
+                {!isColorum && (
+                  <div className="col-md-6">
+                    <div className="text-muted small mb-1">TODA</div>
+                    {isEdit ? (
+                      <input
+                        className="form-control bg-light border-0 rounded-4 px-3 py-3"
+                        value={draft.toda || ""}
+                        onChange={setField("toda")}
+                      />
+                    ) : (
+                      <div className="bg-light border-0 rounded-4 px-3 py-3">
+                        {draft.toda || "—"}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!isColorum && !hasMultipleFranchises && (
+                  <div className="col-md-6">
+                    <div className="text-muted small mb-1">Franchise Number</div>
+                    <div className="bg-light border-0 rounded-4 px-3 py-3">
+                      {selectedFranchise?.number || draft.franchiseNo || "—"}
+                    </div>
+                  </div>
+                )}
+
+                {hasMultipleFranchises && (
+                  <div className="col-md-6">
+                    <div className="text-muted small mb-1">Select Franchise</div>
+                    <select
+                      className="form-select bg-light border-0 rounded-4 px-3 py-3"
+                      value={selectedFranchise?.id || ""}
+                      onChange={handleFranchiseChange}
+                    >
+                      {franchises.map((franchise) => (
+                        <option key={franchise.id} value={franchise.id}>
+                          {franchise.number}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="col-12">
                   <div className="text-muted small mb-1">Address</div>
@@ -202,128 +394,179 @@ export default function DriverInfo() {
                     <input
                       className="form-control bg-light border-0 rounded-4 px-3 py-3"
                       value={draft.address || ""}
-                      onChange={set("address")}
+                      onChange={setField("address")}
                     />
                   ) : (
-                    <div className="bg-light border-0 rounded-4 px-3 py-3">{driver.address || "—"}</div>
+                    <div className="bg-light border-0 rounded-4 px-3 py-3">
+                      {draft.address || "—"}
+                    </div>
                   )}
                 </div>
 
                 <div className="col-12 mt-2">
-                  <div className="fw-semibold mb-2">Vehicle Description</div>
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <div className="fw-semibold mb-0">
+                      {isColorum ? "Vehicle Records" : "Franchise / Vehicle Records"}
+                    </div>
+                    <div className="small text-muted">
+                      {isColorum
+                        ? "Select a vehicle record to view its violations"
+                        : "One franchise corresponds to one vehicle"}
+                    </div>
+                  </div>
 
                   <div className="table-responsive">
                     <table className="tfro-table">
                       <thead>
                         <tr className="text-white" style={{ background: "#000000" }}>
+                          {!isColorum && <th className="text-white">Franchise No.</th>}
                           <th className="text-white">Motor</th>
                           <th className="text-white">Model/Make</th>
                           <th className="text-white">Engine</th>
                           <th className="text-white">Chassis</th>
                           <th className="text-white">Plate Number</th>
                           <th className="text-white">Status</th>
+                          <th className="text-white">Violations</th>
                         </tr>
                       </thead>
+
                       <tbody>
                         {vehicles.length === 0 ? (
                           <tr>
-                            <td colSpan="6" className="text-center text-muted">
+                            <td colSpan={isColorum ? 7 : 8} className="text-center text-muted">
                               No vehicle records found.
                             </td>
                           </tr>
+                        ) : isColorum ? (
+                          vehicles.map((veh, index) => {
+                            const summary = computeVehicleViolationSummary(veh);
+
+                            return (
+                              <tr
+                                key={`${veh.plateNo || "vehicle"}-${index}`}
+                                onClick={() => handleVehicleSelect(index)}
+                                style={{
+                                  background:
+                                    index === selectedVehicleIndex ? "#eef2ff" : "",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <td>{veh.motor || "—"}</td>
+                                <td>{veh.modelMake || "—"}</td>
+                                <td>{veh.engine || "—"}</td>
+                                <td>{veh.chassis || "—"}</td>
+                                <td>{veh.plateNo || "—"}</td>
+                                <td>{getVehicleStatusBadge(veh.status)}</td>
+                                <td>
+                                  <div className="d-flex flex-column align-items-start gap-1">
+                                    <span className="badge rounded-pill bg-light text-dark border">
+                                      {summary.total} total
+                                    </span>
+                                    {summary.unresolved > 0 && (
+                                      <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
+                                        {summary.unresolved} pending
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
                         ) : (
-                          vehicles.map((veh, index) => (
-                            <tr
-                              key={`${veh.plateNo || "vehicle"}-${index}`}
-                              onClick={() => setSelectedVehicleIndex(index)}
-                              style={{
-                                background: index === selectedVehicleIndex ? "#eef2ff" : "",
-                                cursor: "pointer",
-                              }}
-                            >
-                              <td>
-                                {isEdit ? (
-                                  <input
-                                    className="form-control form-control-sm"
-                                    value={veh.motor || ""}
-                                    onChange={setVehicle(index, "motor")}
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
-                                ) : (
-                                  veh.motor || "—"
-                                )}
-                              </td>
-                              <td>
-                                {isEdit ? (
-                                  <input
-                                    className="form-control form-control-sm"
-                                    value={veh.modelMake || ""}
-                                    onChange={setVehicle(index, "modelMake")}
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
-                                ) : (
-                                  veh.modelMake || "—"
-                                )}
-                              </td>
-                              <td>
-                                {isEdit ? (
-                                  <input
-                                    className="form-control form-control-sm"
-                                    value={veh.engine || ""}
-                                    onChange={setVehicle(index, "engine")}
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
-                                ) : (
-                                  veh.engine || "—"
-                                )}
-                              </td>
-                              <td>
-                                {isEdit ? (
-                                  <input
-                                    className="form-control form-control-sm"
-                                    value={veh.chassis || ""}
-                                    onChange={setVehicle(index, "chassis")}
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
-                                ) : (
-                                  veh.chassis || "—"
-                                )}
-                              </td>
-                              <td>
-                                {isEdit ? (
-                                  <input
-                                    className="form-control form-control-sm"
-                                    value={veh.plateNo || ""}
-                                    onChange={setVehicle(index, "plateNo")}
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
-                                ) : (
-                                  veh.plateNo || "—"
-                                )}
-                              </td>
-                              <td>
-                                {isEdit ? (
-                                  <input
-                                    className="form-control form-control-sm"
-                                    value={veh.status || ""}
-                                    onChange={setVehicle(index, "status")}
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
-                                ) : (
-                                  getVehicleStatusBadge(veh.status)
-                                )}
-                              </td>
-                            </tr>
-                          ))
+                          vehicles
+                            .filter((_, index) => {
+                              const franchise =
+                                franchises.find((f) => f.vehicleIndex === index) || null;
+                              return !hasMultipleFranchises
+                                ? true
+                                : franchise?.id === selectedFranchise?.id;
+                            })
+                            .map((veh, index) => {
+                              const originalIndex = vehicles.findIndex((v) => v === veh);
+                              const franchise =
+                                franchises.find((f) => f.vehicleIndex === originalIndex) || null;
+                              const summary = computeVehicleViolationSummary(veh);
+
+                              return (
+                                <tr
+                                  key={`${veh.plateNo || "vehicle"}-${originalIndex}`}
+                                  style={{ background: "#eef2ff" }}
+                                >
+                                  <td>{franchise?.number || draft.franchiseNo || "—"}</td>
+                                  <td>
+                                    {isEdit ? (
+                                      <input
+                                        className="form-control form-control-sm"
+                                        value={veh.motor || ""}
+                                        onChange={setVehicle(originalIndex, "motor")}
+                                      />
+                                    ) : (
+                                      veh.motor || "—"
+                                    )}
+                                  </td>
+                                  <td>
+                                    {isEdit ? (
+                                      <input
+                                        className="form-control form-control-sm"
+                                        value={veh.modelMake || ""}
+                                        onChange={setVehicle(originalIndex, "modelMake")}
+                                      />
+                                    ) : (
+                                      veh.modelMake || "—"
+                                    )}
+                                  </td>
+                                  <td>
+                                    {isEdit ? (
+                                      <input
+                                        className="form-control form-control-sm"
+                                        value={veh.engine || ""}
+                                        onChange={setVehicle(originalIndex, "engine")}
+                                      />
+                                    ) : (
+                                      veh.engine || "—"
+                                    )}
+                                  </td>
+                                  <td>
+                                    {isEdit ? (
+                                      <input
+                                        className="form-control form-control-sm"
+                                        value={veh.chassis || ""}
+                                        onChange={setVehicle(originalIndex, "chassis")}
+                                      />
+                                    ) : (
+                                      veh.chassis || "—"
+                                    )}
+                                  </td>
+                                  <td>
+                                    {isEdit ? (
+                                      <input
+                                        className="form-control form-control-sm"
+                                        value={veh.plateNo || ""}
+                                        onChange={setVehicle(originalIndex, "plateNo")}
+                                      />
+                                    ) : (
+                                      veh.plateNo || "—"
+                                    )}
+                                  </td>
+                                  <td>{getVehicleStatusBadge(veh.status)}</td>
+                                  <td>
+                                    <div className="d-flex flex-column align-items-start gap-1">
+                                      <span className="badge rounded-pill bg-light text-dark border">
+                                        {summary.total} total
+                                      </span>
+                                      {summary.unresolved > 0 && (
+                                        <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
+                                          {summary.unresolved} pending
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
                         )}
                       </tbody>
                     </table>
-                  </div>
-
-                  <div className="mt-2">
-                    <Link to={`/profiles/${driver.id}/transactions`} className="link-primary">
-                      View Transaction Details
-                    </Link>
                   </div>
                 </div>
 
@@ -345,17 +588,18 @@ export default function DriverInfo() {
                           <th className="text-white">Apprehender</th>
                         </tr>
                       </thead>
+
                       <tbody>
                         {!selectedVehicle ? (
                           <tr>
                             <td colSpan="7" className="text-center text-muted">
-                              Select a vehicle to view violation history.
+                              No selected vehicle.
                             </td>
                           </tr>
                         ) : violations.length === 0 ? (
                           <tr>
                             <td colSpan="7" className="text-center text-muted">
-                              No violation history found for this vehicle.
+                              No violation history found for this record.
                             </td>
                           </tr>
                         ) : (
@@ -364,8 +608,8 @@ export default function DriverInfo() {
                               <td>{item.date || "—"}</td>
                               <td>{item.violation || "—"}</td>
                               <td>{item.location || "—"}</td>
-                              <td>{item.originalFine != null ? `₱${item.originalFine}` : "—"}</td>
-                              <td>{item.declaredFine != null ? `₱${item.declaredFine}` : "—"}</td>
+                              <td>{formatMoney(item.originalFine)}</td>
+                              <td>{formatMoney(item.declaredFine)}</td>
                               <td>{getViolationStatusBadge(item.status)}</td>
                               <td>{item.apprehender || "—"}</td>
                             </tr>
@@ -374,35 +618,106 @@ export default function DriverInfo() {
                       </tbody>
                     </table>
                   </div>
+
+                  <div className="mt-2">
+                    <Link
+                      to={`/profiles/${driver.id}/transactions`}
+                      className="link-primary"
+                    >
+                      View Transaction Details
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>
-
             <div className="col-lg-4 d-flex justify-content-center">
-              <div
-                className="rounded-circle d-flex align-items-center justify-content-center overflow-hidden"
-                style={{ width: 220, height: 220, background: "#f3d2ff" }}
-              >
-                {driver.photoUrl ? (
-                  <img src={driver.photoUrl} alt="Driver" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                ) : (
-                  <div className="text-muted small">No photo</div>
-                )}
+              <div className="text-center">
+                <div
+                  className="position-relative mx-auto"
+                  style={{ width: 220, height: 220 }}
+                >
+                  {/* PROFILE IMAGE */}
+                  <div
+                    className="rounded-circle d-flex align-items-center justify-content-center overflow-hidden"
+                    style={{
+                      width: 220,
+                      height: 220,
+                      background: "#e5e7eb", // soft gray like your sample
+                    }}
+                  >
+                    {draft.photoUrl ? (
+                      <img
+                        src={draft.photoUrl}
+                        alt="Driver"
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <i
+                        className="bi bi-person-fill"
+                        style={{ fontSize: 90, color: "#9ca3af" }}
+                      />
+                    )}
+                  </div>
+
+                  {/* CAMERA BUTTON (BOTTOM RIGHT OVERLAY) */}
+                  <label
+                    className="position-absolute no-print d-flex align-items-center justify-content-center"
+                    style={{
+                      bottom: 6,
+                      right: 6,
+                      width: 48,
+                      height: 48,
+                      borderRadius: "50%",
+                      background: "#9ca3af",
+                      color: "#fff",
+                      cursor: "pointer",
+                      border: "4px solid #fff", // nice clean ring
+                      boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+                    }}
+                    title="Upload Photo"
+                  >
+                    <i className="bi bi-plus-lg" style={{ fontSize: 20 }} />
+
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={handlePhotoUpload}
+                    />
+                  </label>
+                </div>
+
+                {/* DRIVER TYPE */}
+                <div className="mt-3">{getDriverTypeBadge(driverType)}</div>
               </div>
             </div>
-          </div>
-        </div>
-
+            </div>
+            </div>
         <div className="d-flex justify-content-between align-items-center p-4 no-print">
-          <button className="btn btn-primary rounded-4 px-4" type="button" onClick={() => alert("Next step: Add new vehicle/history row")}>
+          <button
+            className="btn btn-primary rounded-4 px-4"
+            type="button"
+            onClick={() => alert("Next step: Add new franchise/vehicle entry")}
+          >
             + Add New
           </button>
 
           <div className="d-flex gap-3">
-            <button className="btn btn-primary rounded-4 px-5" type="button" onClick={() => setIsEdit(true)} disabled={isEdit}>
+            <button
+              className="btn btn-primary rounded-4 px-5"
+              type="button"
+              onClick={() => setIsEdit(true)}
+              disabled={isEdit}
+            >
               Edit
             </button>
-            <button className="btn btn-primary rounded-4 px-5" type="button" onClick={handleSave} disabled={!isEdit}>
+
+            <button
+              className="btn btn-primary rounded-4 px-5"
+              type="button"
+              onClick={handleSave}
+              disabled={!isEdit}
+            >
               Save
             </button>
           </div>

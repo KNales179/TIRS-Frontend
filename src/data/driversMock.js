@@ -1,6 +1,8 @@
+// src/data/driversMock.js
 export const driversMock = [
   {
     id: "d1",
+    role: "Both",
     type: "REGISTERED",
     franchiseNo: "FR-2024-001",
     name: "Jiangyu",
@@ -9,6 +11,10 @@ export const driversMock = [
     contact: "09123456789",
     toda: "TODA 1",
     photoUrl: "",
+    franchises: [
+      { id: "f1", number: "FR-2024-001", vehicleIndex: 0 },
+      { id: "f2", number: "FR-2024-002", vehicleIndex: 1 },
+    ],
     vehicles: [
       {
         motor: "Honda",
@@ -26,6 +32,17 @@ export const driversMock = [
             declaredFine: 300,
             status: "Done",
             apprehender: "Mike Vargas",
+            franchiseId: "f1",
+          },
+          {
+            date: "2025-01-15",
+            violation: "Overloading",
+            location: "Brgy. 2, Lucena City",
+            originalFine: 750,
+            declaredFine: 500,
+            status: "On Process",
+            apprehender: "Ana Reyes",
+            franchiseId: "f1",
           },
         ],
       },
@@ -45,18 +62,25 @@ export const driversMock = [
             declaredFine: 800,
             status: "On Process",
             apprehender: "Ana Reyes",
+            franchiseId: "f2",
           },
         ],
       },
     ],
     transactions: [
-      { date: "2025-02-10", transaction: "Franchise Renewal", tfroPersonnel: "Mike Vargas" },
+      {
+        date: "2025-02-10",
+        transaction: "Franchise Renewal",
+        tfroPersonnel: "Mike Vargas",
+      },
     ],
   },
+
   {
     id: "c1",
+    role: "Driver",
     type: "COLORUM",
-    franchiseNo: "N/A",
+    franchiseNo: "",
     name: "Juan Dela Cruz",
     operatorName: "Juan Dela Cruz",
     address: "Brgy. 6, Lucena City",
@@ -94,7 +118,140 @@ export const driversMock = [
       },
     ],
     transactions: [
-      { date: "2025-02-21", transaction: "Assessment", tfroPersonnel: "Mike Vargas" },
+      {
+        date: "2025-02-21",
+        transaction: "Assessment",
+        tfroPersonnel: "Mike Vargas",
+      },
+    ],
+  },
+
+  {
+    id: "d2",
+    role: "Driver",
+    type: "REGISTERED",
+    franchiseNo: "FR-2024-003",
+    name: "Mark Anthony Reyes",
+    operatorName: "Lorna Reyes",
+    address: "Brgy. 3, Lucena City",
+    contact: "09181234567",
+    toda: "TODA 1",
+    photoUrl: "",
+    franchises: [{ id: "f3", number: "FR-2024-003", vehicleIndex: 0 }],
+    vehicles: [
+      {
+        motor: "Honda",
+        modelMake: "TMX 125",
+        engine: "ENG-22221",
+        chassis: "CHS-33331",
+        plateNo: "JKL-214",
+        status: "Registered",
+        violations: [
+          {
+            date: "2025-01-28",
+            violation: "Illegal Parking",
+            location: "Brgy. 3, Lucena City",
+            originalFine: 500,
+            declaredFine: 400,
+            status: "Done",
+            apprehender: "Mike Vargas",
+            franchiseId: "f3",
+          },
+        ],
+      },
+    ],
+    transactions: [
+      {
+        date: "2025-01-05",
+        transaction: "New Franchise Registration",
+        tfroPersonnel: "Ana Reyes",
+      },
+    ],
+  },
+
+  {
+    id: "d3",
+    role: "Both",
+    type: "SPECIAL",
+    franchiseNo: "SP-2025-001",
+    name: "Allen Castro",
+    operatorName: "Grace Castro",
+    address: "Brgy. 9, Lucena City",
+    contact: "09175678901",
+    toda: "Special Franchise",
+    photoUrl: "",
+    franchises: [{ id: "sf1", number: "SP-2025-001", vehicleIndex: 0 }],
+    vehicles: [
+      {
+        motor: "Honda",
+        modelMake: "Click 125i",
+        engine: "ENG-50001",
+        chassis: "CHS-50001",
+        plateNo: "VWX-111",
+        status: "Special Franchise",
+        violations: [
+          {
+            date: "2025-03-01",
+            violation: "No Fare Matrix",
+            location: "Brgy. 9, Lucena City",
+            originalFine: 400,
+            declaredFine: 300,
+            status: "Done",
+            apprehender: "Mike Vargas",
+            franchiseId: "sf1",
+          },
+        ],
+      },
+    ],
+    transactions: [
+      {
+        date: "2025-02-11",
+        transaction: "Special Franchise Issuance",
+        tfroPersonnel: "Ana Reyes",
+      },
+    ],
+  },
+
+  {
+    id: "d4",
+    role: "Both",
+    type: "SPECIAL",
+    franchiseNo: "SP-2025-002",
+    name: "Paolo Garcia",
+    operatorName: "Paolo Garcia",
+    address: "Brgy. 10, Lucena City",
+    contact: "09166789012",
+    toda: "Special Franchise",
+    photoUrl: "",
+    franchises: [{ id: "sf2", number: "SP-2025-002", vehicleIndex: 0 }],
+    vehicles: [
+      {
+        motor: "Kymco",
+        modelMake: "Like 150i",
+        engine: "ENG-60001",
+        chassis: "CHS-60001",
+        plateNo: "YZA-222",
+        status: "Special Franchise",
+        violations: [
+          {
+            date: "2025-02-25",
+            violation: "No ID Displayed",
+            location: "Brgy. 10, Lucena City",
+            originalFine: 400,
+            declaredFine: 300,
+            status: "Done",
+            apprehender: "Ana Reyes",
+            franchiseId: "sf2",
+          },
+        ],
+      },
+    ],
+    transactions: [
+      {
+        date: "2025-02-12",
+        transaction: "Special Franchise Renewal",
+        tfroPersonnel: "Mike Vargas",
+      },
     ],
   },
 ];

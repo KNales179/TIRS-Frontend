@@ -1,23 +1,50 @@
-/* 1) Global tokens */
+/* =========================
+   1) Global Tokens
+   ========================= */
 :root {
   --sidebar-w: 280px;
 
   --bg: #f8f9fb;
   --surface: #ffffff;
-  --border: #e9ecef;
-  --text: #111827;
-  --muted: #6b7280;
+  --surface-soft: #f8fafc;
+  --border: #edf0f6;
+  --border-strong: #dde3ec;
 
-  --primary: #0d6efd; /* you can change later */
-  --radius-lg: 16px;
+  --text: #1f2440;
+  --text-dark: #2f375a;
+  --muted: #6b7280;
+  --muted-soft: #98a0b3;
+
+  --primary: #5b63ff;
+  --primary-dark: #4f46e5;
+  --primary-soft: #eef2ff;
+
+  --success-bg: #e8fff1;
+  --success-text: #1fa45a;
+
+  --warning-bg: #fff6da;
+  --warning-text: #c48a00;
+
+  --danger-bg: #ffe8e3;
+  --danger-text: #e76f51;
+
+  --info-bg: #dff4ff;
+  --info-text: #2d9cd3;
+
+  --radius-md: 14px;
+  --radius-lg: 18px;
   --radius-xl: 22px;
 
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.08);
+  --shadow-sm: 0 6px 16px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 10px 30px rgba(17, 24, 39, 0.05);
+  --shadow-lg: 0 14px 34px rgba(17, 24, 39, 0.08);
 }
 
-/* 2) Page base */
-html, body {
+/* =========================
+   2) Page Base
+   ========================= */
+html,
+body {
   height: 100%;
 }
 
@@ -27,7 +54,9 @@ body {
   color: var(--text);
 }
 
-/* 3) Layout helpers */
+/* =========================
+   3) Layout Helpers
+   ========================= */
 .app-shell {
   min-height: 100vh;
   background: var(--bg);
@@ -38,17 +67,20 @@ body {
 }
 
 @media (min-width: 768px) {
-  .app-content { padding: 24px; }
+  .app-content {
+    padding: 24px;
+  }
 }
 
-/* Desktop offset for fixed sidebar */
 @media (min-width: 992px) {
   .with-sidebar {
     margin-left: var(--sidebar-w);
   }
 }
 
-/* 4) Sidebar */
+/* =========================
+   4) Sidebar
+   ========================= */
 .sidebar {
   width: var(--sidebar-w);
   height: 100vh;
@@ -72,40 +104,70 @@ body {
   background: var(--surface);
 }
 
-/* 5) Reusable surfaces */
-.card-soft {
+/* =========================
+   5) Reusable Surfaces
+   ========================= */
+.card-soft,
+.panel,
+.dashboard-stat-card,
+.dashboard-panel,
+.registry-shell {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+}
+
+.dashboard-stat-card,
+.dashboard-panel,
+.registry-shell {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.dashboard-stat-card:hover,
+.dashboard-panel:hover,
+.registry-shell:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+.card-soft {
   box-shadow: var(--shadow-sm);
 }
 
-.panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-}
-
-/* 6) Buttons (optional override styles) */
+/* =========================
+   6) Buttons
+   ========================= */
 .btn-soft {
-  border-radius: 14px !important;
+  border-radius: var(--radius-md) !important;
 }
 
 .btn-primary-soft {
   background: var(--primary);
   color: #fff;
   border: none;
-  border-radius: 14px !important;
+  border-radius: var(--radius-md) !important;
 }
 
 .btn-primary-soft:hover {
-  filter: brightness(0.95);
+  filter: brightness(0.96);
 }
 
-/* 7) Tables */
+.icon-btn,
+.dashboard-icon-button,
+.registry-menu-btn {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+}
+
+/* =========================
+   7) Base Table Helpers
+   ========================= */
 .table-soft thead th {
   font-size: 12px;
-  text-transform: none;
   color: var(--muted);
   border-bottom: 1px solid var(--border) !important;
 }
@@ -115,9 +177,8 @@ body {
 }
 
 /* =========================
-   Login Page
+   8) Login Page
    ========================= */
-
 .auth-shell {
   min-height: 100vh;
   background: var(--bg);
@@ -132,7 +193,7 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
   overflow: hidden;
 }
 
@@ -185,50 +246,263 @@ body {
 
 @media (max-width: 991px) {
   .auth-right {
-    display: none; /* hide illustration on small screens */
+    display: none;
   }
+
   .auth-left {
     padding: 28px 20px;
   }
 }
 
-/* icons */
-/* Icons */
+/* =========================
+   9) Icons
+   ========================= */
 .bi {
   vertical-align: -0.125em;
 }
 
-.icon-btn {
-  width: 36px;
-  height: 36px;
+/* =========================
+   10) Dashboard
+   ========================= */
+.dashboard-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+
+.dashboard-title {
+  font-size: clamp(2rem, 3vw, 3rem);
+  color: var(--text);
+}
+
+.dashboard-subtitle {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.dashboard-date-input {
+  min-width: 170px;
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--border) !important;
+  background: #fff !important;
+  box-shadow: var(--shadow-sm);
+  padding: 10px 14px !important;
+}
+
+.dashboard-stat-icon {
+  width: 60px;
+  height: 60px;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.dashboard-stat-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #7b809a;
+  margin-bottom: 6px;
+}
+
+.dashboard-stat-value {
+  font-size: 2.15rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #2e355d;
+  margin-bottom: 6px;
+}
+
+.dashboard-stat-subtitle {
+  font-size: 13px;
+  color: var(--muted-soft);
+}
+
+.dashboard-section-title {
+  color: #374164;
+}
+
+.dashboard-section-subtitle {
+  font-size: 13px;
+  color: var(--muted-soft);
+}
+
+.dashboard-chart-wrap {
+  height: clamp(260px, 32vw, 320px);
+  background: linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(246,244,255,1) 100%);
+  overflow: hidden;
+}
+
+.dashboard-tooltip {
+  background: #0b1033;
+  border-radius: 12px;
+  min-width: 110px;
+  box-shadow: 0 10px 25px rgba(11, 16, 51, 0.15);
+}
+
+.dashboard-donut-inner {
+  width: 65%;
+  height: 65%;
+}
+
+.dashboard-table thead th {
+  color: #8a93a7;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  padding-bottom: 14px;
+}
+
+.dashboard-table tbody td {
+  padding-top: 14px;
+  padding-bottom: 14px;
+  border-color: #eff2f7;
+  color: var(--text-dark);
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.dashboard-table tbody tr:hover {
+  background: #fafbff;
+}
+
+.dashboard-count-badge {
+  min-width: 56px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  display: inline-block;
+  text-align: center;
+  background: var(--info-bg);
+  color: var(--info-text);
+  font-weight: 700;
+}
+
+.dashboard-status-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 110px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
+.dashboard-status-badge.resolved {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.dashboard-status-badge.pending {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.dashboard-status-badge.review {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.dashboard-rank-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dashboard-progress-track {
+  width: 100%;
+  height: 10px;
+  background: #edf0f7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.dashboard-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.dashboard-filter-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.dashboard-filter-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-soft);
+}
+
+.dashboard-range-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dashboard-range-pill {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
+}
+
+.dashboard-range-pill:hover {
+  background: #f7f8ff;
+  color: var(--primary-dark);
+  border-color: #dfe3ff;
+}
+
+.dashboard-range-pill.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  box-shadow: 0 10px 24px rgba(91, 99, 255, 0.22);
+}
+
+.dashboard-table tbody td {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.dashboard-table thead th {
+  vertical-align: middle;
+}
+
+.dashboard-panel .dashboard-date-input {
+  min-height: 48px;
+}
+
+.dashboard-table tbody tr td:first-child {
+  min-width: 320px;
+}
 /* =========================
-   TFRO TABLE THEME
+   12) TFRO Table Theme
    ========================= */
-
-:root {
-  --tfro-primary: #5b63ff;
-  --tfro-primary-soft: #eef0ff;
-  --tfro-border: #e9e9ef;
-  --tfro-text-muted: #6b7280;
-  --tfro-danger: #ef4444;
-  --tfro-success: #22c55e;
-}
-
-/* table wrapper */
 .tfro-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
 }
 
-/* table header */
 .tfro-table thead th {
-  background: var(--tfro-primary);
+  background: var(--primary);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -236,36 +510,32 @@ body {
   border: none;
 }
 
-/* rounded header corners */
 .tfro-table thead th:first-child {
   border-top-left-radius: 12px;
 }
+
 .tfro-table thead th:last-child {
   border-top-right-radius: 12px;
 }
 
-/* body cells */
 .tfro-table tbody td {
   padding: 12px 14px;
   font-size: 13px;
   color: #111;
-  border-bottom: 1px solid var(--tfro-border);
+  border-bottom: 1px solid #e9e9ef;
 }
 
-/* zebra rows */
 .tfro-table tbody tr:nth-child(even) {
   background: #fafafa;
 }
 
-/* hover */
 .tfro-table tbody tr:hover {
-  background: var(--tfro-primary-soft);
+  background: #eef0ff;
 }
 
-/* status pills */
 .tfro-badge-danger {
   background: #ffe8ea;
-  color: var(--tfro-danger);
+  color: #ef4444;
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
@@ -274,16 +544,68 @@ body {
 
 .tfro-badge-success {
   background: #e8fff1;
-  color: var(--tfro-success);
+  color: #22c55e;
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 500;
 }
 
+/* =========================
+   13) Responsive
+   ========================= */
+@media (max-width: 991px) {
+  .registry-table-head {
+    display: none;
+  }
 
+  .registry-actions-row {
+    justify-content: stretch;
+    flex-wrap: wrap;
+  }
 
-/* printable tables */
+  .registry-actions-row .btn {
+    flex: 1 1 180px;
+  }
+}
+
+@media (max-width: 767px) {
+  .dashboard-title,
+  .registry-page-title {
+    font-size: 2rem;
+  }
+
+  .dashboard-stat-value {
+    font-size: 1.8rem;
+  }
+
+  .dashboard-date-input {
+    min-width: 100%;
+  }
+
+  .dashboard-status-badge {
+    min-width: unset;
+    width: 100%;
+  }
+
+  .dashboard-filter-wrap {
+    width: 100%;
+  }
+
+  .dashboard-range-pills {
+    width: 100%;
+  }
+
+  .dashboard-range-pill {
+    flex: 1 1 calc(50% - 10px);
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+/* =========================
+   14) Print
+   ========================= */
 @media print {
   .tfro-table thead th {
     background: #000 !important;

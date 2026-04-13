@@ -1,32 +1,14 @@
 // src/data/enforcersMock.js
+import { driversMock } from "./driversMock";
 
-export const enforcersMock = [
+const enforcersBase = [
   {
-    id: "e1", // internal id for routing
+    id: "e1",
     idNumber: "TFRO-ENF-001",
     name: "Mike Vargas",
     contact: "09123456789",
     address: "Brgy. 1, Lucena City",
     photoUrl: "",
-
-    apprehensionRecord: [
-      {
-        date: "2025-02-10",
-        personApprehended: "Juan Dela Cruz",
-        violationCommitted: "Colorum",
-        location: "Brgy. 6",
-        commission: 300,
-        totalApprehension: "unavailable",
-      },
-      {
-        date: "2025-02-15",
-        personApprehended: "Pedro Santos",
-        violationCommitted: "Registered - No Helmet",
-        location: "Brgy. 3",
-        commission: 300,
-        totalApprehension: "unavailable",
-      },
-    ],
   },
   {
     id: "e2",
@@ -35,18 +17,59 @@ export const enforcersMock = [
     contact: "09987654321",
     address: "Brgy. 2, Lucena City",
     photoUrl: "",
-    apprehensionRecord: [
-      {
-        date: "2025-01-20",
-        personApprehended: "Mark Ruffalo",
-        violationCommitted: "Overloading",
-        location: "Brgy. 5",
-        commission: 300,
-        totalApprehension: "unavailable",
-      },
-    ],
+  },
+  {
+    id: "e3",
+    idNumber: "TFRO-ENF-003",
+    name: "Rico Mendoza",
+    contact: "09181234567",
+    address: "Brgy. 3, Lucena City",
+    photoUrl: "",
+  },
+  {
+    id: "e4",
+    idNumber: "TFRO-ENF-004",
+    name: "Crisanto Villanueva",
+    contact: "09214567890",
+    address: "Brgy. 4, Lucena City",
+    photoUrl: "",
   },
 ];
+
+function buildApprehensionRecords(drivers) {
+  const records = [];
+
+  drivers.forEach((driver) => {
+    (driver.vehicles || []).forEach((vehicle) => {
+      (vehicle.violations || []).forEach((violation) => {
+        records.push({
+          apprehender: violation.apprehender || "Unknown",
+          date: violation.date,
+          personApprehended: driver.name,
+          violationCommitted: violation.violation,
+          location: violation.location,
+          commission: 300,
+          totalApprehension: "unavailable",
+          driverId: driver.id,
+          plateNo: vehicle.plateNo || "",
+          vehicleStatus: vehicle.status || "",
+          franchiseId: violation.franchiseId || null,
+        });
+      });
+    });
+  });
+
+  return records;
+}
+
+const allApprehensions = buildApprehensionRecords(driversMock);
+
+export const enforcersMock = enforcersBase.map((enforcer) => ({
+  ...enforcer,
+  apprehensionRecord: allApprehensions.filter(
+    (record) => record.apprehender === enforcer.name
+  ),
+}));
 
 export function findEnforcerById(id) {
   return enforcersMock.find((x) => x.id === id);

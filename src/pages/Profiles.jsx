@@ -1,4 +1,3 @@
-// src/pages/Profiles.jsx
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { driversMock as seedDrivers } from "../data/driversMock";
@@ -16,14 +15,14 @@ function Avatar({ name }) {
 
   return (
     <div
-      className="rounded-circle d-inline-flex align-items-center justify-content-center"
+      className="d-inline-flex align-items-center justify-content-center rounded-circle"
       style={{
-        width: 36,
-        height: 36,
-        background: "#f1f3ff",
+        width: 40,
+        height: 40,
+        background: "#eef2ff",
         color: "#5b63ff",
         fontWeight: 700,
-        fontSize: 12,
+        fontSize: 13,
         flex: "0 0 auto",
       }}
       title={name}
@@ -33,24 +32,46 @@ function Avatar({ name }) {
   );
 }
 
-function TypeBadge({ type }) {
-  const isReg = type === "REGISTERED";
-  return (
-    <span
-      className={`badge rounded-pill ${
-        isReg ? "bg-success-subtle text-success-emphasis" : "bg-danger-subtle text-danger-emphasis"
-      }`}
-    >
-      {isReg ? "Registered" : "Colorum"}
-    </span>
-  );
+function normalizeDriverType(type) {
+  const t = String(type || "").trim().toUpperCase();
+
+  if (
+    t === "REGISTERED" ||
+    t === "WITH FRANCHISE" ||
+    t === "FRANCHISED" ||
+    t === "FOR HAILING"
+  ) {
+    return "WITH FRANCHISE";
+  }
+
+  if (t === "SPECIAL" || t === "SPECIAL FRANCHISE") {
+    return "SPECIAL FRANCHISE";
+  }
+
+  if (t === "COLORUM") {
+    return "COLORUM";
+  }
+
+  if (t === "TEMPORARY") {
+    return "TEMPORARY";
+  }
+
+  return t || "—";
 }
 
-function parseBrgy(text = "") {
-  const s = String(text);
-  const m = s.match(/\b(brgy\.?|barangay)\s*([a-z0-9-]+)/i);
-  if (!m) return "";
-  return `Brgy. ${m[2]}`.replace(/\s+/g, " ").trim();
+function TypeBadge({ type }) {
+  const normalized = normalizeDriverType(type);
+
+  const badgeClass =
+    normalized === "WITH FRANCHISE"
+      ? "bg-success-subtle text-success-emphasis"
+      : normalized === "SPECIAL FRANCHISE"
+      ? "bg-primary-subtle text-primary-emphasis"
+      : normalized === "COLORUM"
+      ? "bg-warning-subtle text-warning-emphasis"
+      : "bg-secondary-subtle text-secondary-emphasis";
+
+  return <span className={`badge rounded-pill ${badgeClass}`}>{normalized}</span>;
 }
 
 function makeId(prefix = "x") {
@@ -63,194 +84,96 @@ export default function Profiles() {
   const tabs = ["Enforcer", "Driver", "Colorum"];
   const [tab, setTab] = useState("Driver");
 
-  // local list state (so "Add" works without backend)
   const [drivers, setDrivers] = useState(seedDrivers);
   const [enforcers, setEnforcers] = useState(seedEnforcers);
 
-  // search + sorting
-  const [q, setQ] = useState("");
+  const [query, setQuery] = useState("");
   const [sortDir, setSortDir] = useState("asc");
-  const [openMenuId, setOpenMenuId] = useState(null);
 
-  // filters (Driver/Colorum)
-  const [filterTODA, setFilterTODA] = useState("ALL");
-  const [filterBrgy, setFilterBrgy] = useState("ALL");
-  const [filterStatus, setFilterStatus] = useState("ALL");
-  const [hasViolations, setHasViolations] = useState(false);
-  const [hasFranchise, setHasFranchise] = useState(false);
-
-  // enforcer filter
-  const [enfBrgy, setEnfBrgy] = useState("ALL");
-
-  // modals
   const [showDriverModal, setShowDriverModal] = useState(false);
   const [showEnforcerModal, setShowEnforcerModal] = useState(false);
 
   const baseList = useMemo(() => {
-    if (tab === "Driver") return drivers.filter((d) => d.type === "REGISTERED");
-    if (tab === "Colorum") return drivers.filter((d) => d.type === "COLORUM");
-    if (tab === "Enforcer") return enforcers;
+    if (tab === "Driver") {
+      return drivers.filter((d) => {
+        const type = normalizeDriverType(d.type);
+        return type === "WITH FRANCHISE" || type === "SPECIAL FRANCHISE";
+      });
+    }
+
+    if (tab === "Colorum") {
+      return drivers.filter((d) => normalizeDriverType(d.type) === "COLORUM");
+    }
+
+    if (tab === "Enforcer") {
+      return enforcers;
+    }
+
     return [];
   }, [tab, drivers, enforcers]);
 
-  const driverOptions = useMemo(() => {
-    if (tab === "Enforcer") return { todas: [], brgys: [], statuses: [] };
-
-    const list = baseList;
-    const todos = new Set();
-    const brgys = new Set();
-    const statuses = new Set();
-
-    list.forEach((d) => {
-      if (d.toda) todos.add(d.toda);
-      const b = parseBrgy(d.address);
-      if (b) brgys.add(b);
-      const st = d.vehicle?.status;
-      if (st) statuses.add(st);
-    });
-
-    return {
-      todas: Array.from(todos).sort(),
-      brgys: Array.from(brgys).sort(),
-      statuses: Array.from(statuses).sort(),
-    };
-  }, [baseList, tab]);
-
-  const enforcerOptions = useMemo(() => {
-    if (tab !== "Enforcer") return { brgys: [] };
-
-    const brgys = new Set();
-    baseList.forEach((e) => {
-      (e.apprehensionRecord || []).forEach((r) => {
-        const b = parseBrgy(r.location || "");
-        if (b) brgys.add(b);
-      });
-    });
-
-    return { brgys: Array.from(brgys).sort() };
-  }, [baseList, tab]);
-
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
     let list = baseList;
 
     if (tab === "Enforcer") {
       list = list.filter((e) => {
-        if (s) {
-          const ok =
-            (e.name || "").toLowerCase().includes(s) ||
-            (e.idNumber || "").toLowerCase().includes(s) ||
-            (e.contact || "").toLowerCase().includes(s) ||
-            (e.address || "").toLowerCase().includes(s);
-
-          if (!ok) return false;
-        }
-
-        if (enfBrgy !== "ALL") {
-          const records = e.apprehensionRecord || [];
-          const anyMatch = records.some((r) => parseBrgy(r.location || "") === enfBrgy);
-          if (!anyMatch) return false;
-        }
-
-        return true;
+        if (!q) return true;
+        return [e.name, e.idNumber, e.contact, e.address]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
       });
     } else {
       list = list.filter((d) => {
-        if (filterTODA !== "ALL" && d.toda !== filterTODA) return false;
+        const firstVehicle = d.vehicles?.[0] || {};
+        if (!q) return true;
 
-        const b = parseBrgy(d.address);
-        if (filterBrgy !== "ALL" && b !== filterBrgy) return false;
-
-        const st = d.vehicle?.status || "";
-        if (filterStatus !== "ALL" && st !== filterStatus) return false;
-
-        if (hasViolations && (d.violationsHistory || []).length === 0) return false;
-        if (hasFranchise && !String(d.franchiseNo || "").trim()) return false;
-
-        if (s) {
-          const franchise = (d.franchiseNo || "").toLowerCase();
-          const name = (d.name || "").toLowerCase();
-          const address = (d.address || "").toLowerCase();
-          const contact = (d.contact || "").toLowerCase();
-          const toda = (d.toda || "").toLowerCase();
-          const plate = (d.vehicle?.plateNo || "").toLowerCase();
-
-          const ok =
-            franchise.includes(s) ||
-            name.includes(s) ||
-            address.includes(s) ||
-            contact.includes(s) ||
-            toda.includes(s) ||
-            plate.includes(s);
-
-          if (!ok) return false;
-        }
-
-        return true;
+        return [
+          d.name,
+          d.franchiseNo,
+          d.address,
+          d.contact,
+          d.toda,
+          d.type,
+          firstVehicle.plateNo,
+          firstVehicle.motor,
+          firstVehicle.modelMake,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
       });
     }
 
-    list = [...list].sort((a, b) => {
+    return [...list].sort((a, b) => {
       const an = (a.name || "").toLowerCase();
       const bn = (b.name || "").toLowerCase();
+
       if (an < bn) return sortDir === "asc" ? -1 : 1;
       if (an > bn) return sortDir === "asc" ? 1 : -1;
       return 0;
     });
+  }, [baseList, query, sortDir, tab]);
 
-    return list;
-  }, [
-    baseList,
-    tab,
-    q,
-    sortDir,
-    filterTODA,
-    filterBrgy,
-    filterStatus,
-    hasViolations,
-    hasFranchise,
-    enfBrgy,
-  ]);
-
-  function resetFilters() {
-    setQ("");
-    setFilterTODA("ALL");
-    setFilterBrgy("ALL");
-    setFilterStatus("ALL");
-    setHasViolations(false);
-    setHasFranchise(false);
-    setEnfBrgy("ALL");
-  }
-
-  function goRow(id) {
-    setOpenMenuId(null);
-    if (tab === "Enforcer") nav(`/enforcers/${id}`);
-    else nav(`/profiles/${id}`);
-  }
-
-  function goTransactions(id) {
-    setOpenMenuId(null);
-    nav(`/profiles/${id}/transactions`);
-  }
-
-  function closeMenu() {
-    setOpenMenuId(null);
-  }
-
-  function headerName() {
-    if (tab === "Driver") return "Driver’s List";
-    if (tab === "Colorum") return "Colorum List";
-    return "Enforcer’s List";
+  function headerTitle() {
+    if (tab === "Driver") return "Driver Profiles";
+    if (tab === "Colorum") return "Colorum Profiles";
+    return "Enforcer Profiles";
   }
 
   function handleAddClick() {
     if (tab === "Enforcer") setShowEnforcerModal(true);
-    else if (tab === "Driver") setShowDriverModal(true);
-    else if (tab === "Colorum") setShowDriverModal(true);
+    else setShowDriverModal(true);
   }
 
   function handleDriverSubmit(payload) {
-    const newDriver = { id: makeId("d"), ...payload };
+    const newDriver = {
+      id: makeId("d"),
+      role: payload.role || "Driver",
+      ...payload,
+    };
+
     setDrivers((prev) => [newDriver, ...prev]);
   }
 
@@ -259,335 +182,216 @@ export default function Profiles() {
     setEnforcers((prev) => [newEnforcer, ...prev]);
   }
 
+  function goToProfile(id) {
+    if (tab === "Enforcer") nav(`/enforcers/${id}`);
+    else nav(`/profiles/${id}`);
+  }
+
+  function goToTransactions(id) {
+    nav(`/profiles/${id}/transactions`);
+  }
+
+  const headerButtonClass = (active) =>
+    `btn ${active ? "btn-primary" : "btn-outline-primary"} rounded-3 px-3`;
+
   return (
-    <div onClick={() => (openMenuId ? closeMenu() : null)}>
-      {/* Modals */}
+    <div className="container-fluid">
       <DriverFormModal
         show={showDriverModal}
         mode={tab === "Colorum" ? "COLORUM" : "REGISTERED"}
         onClose={() => setShowDriverModal(false)}
         onSubmit={handleDriverSubmit}
       />
+
       <EnforcerFormModal
         show={showEnforcerModal}
         onClose={() => setShowEnforcerModal(false)}
         onSubmit={handleEnforcerSubmit}
       />
 
-      {/* Header + Tabs */}
-      <div className="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
-        <div>
-          <h1 className="h4 fw-bold mb-1">{headerName()}</h1>
-          <div className="text-muted small">Browse and open a record to view full information.</div>
-        </div>
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h1 className="h4 fw-bold mb-0">{headerTitle()}</h1>
 
-        <div className="btn-group">
-          {tabs.map((t) => (
-            <button
-              key={t}
-              className={`btn ${tab === t ? "btn-primary" : "btn-outline-primary"}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setTab(t);
-                setOpenMenuId(null);
-                resetFilters();
-              }}
-              type="button"
-            >
-              {t}
-            </button>
-          ))}
+        <div className="d-flex align-items-center gap-2">
+          <div className="input-group" style={{ width: 280 }}>
+            <input
+              className="form-control rounded-start-4"
+              placeholder={tab === "Enforcer" ? "Search enforcer..." : "Search profile..."}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <span className="input-group-text rounded-end-4 bg-white">
+              <i className="bi bi-search text-muted"></i>
+            </span>
+          </div>
+
+          <button
+            className="btn btn-primary rounded-4 px-4"
+            onClick={handleAddClick}
+          >
+            + Add {tab === "Enforcer" ? "Enforcer" : "Profile"}
+          </button>
         </div>
       </div>
 
-      <div className="card rounded-4 shadow-sm">
-        <div className="card-body">
-          {/* Count + Actions */}
-          <div className="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
-            <div className="text-muted small">
-              Showing <b>{filtered.length}</b> record(s)
-            </div>
+      <div className="d-flex gap-2 mb-3 flex-wrap">
+        {tabs.map((t) => (
+          <button
+            key={t}
+            className={headerButtonClass(tab === t)}
+            onClick={() => {
+              setTab(t);
+              setQuery("");
+            }}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
 
-            <div className="d-flex gap-2">
-              <button className="btn btn-sm btn-outline-secondary" type="button" onClick={resetFilters}>
-                Reset filters
-              </button>
-              <button className="btn btn-sm btn-primary" type="button" onClick={handleAddClick}>
-                + Add New
-              </button>
-            </div>
-          </div>
-
-          {/* FILTER BAR */}
-          <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
-            {tab === "Enforcer" ? (
-              <>
-                <select
-                  className="form-select"
-                  style={{ width: 180 }}
-                  value={enfBrgy}
-                  onChange={(e) => setEnfBrgy(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <option value="ALL">All Barangays</option>
-                  {enforcerOptions.brgys.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
-
-                <input
-                  className="form-control"
-                  style={{ flex: "1 1 320px", minWidth: 280 }}
-                  placeholder="Search name, ID number, address, contact..."
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </>
-            ) : (
-              <>
-                <select
-                  className="form-select"
-                  style={{ width: 170 }}
-                  value={filterTODA}
-                  onChange={(e) => setFilterTODA(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <option value="ALL">All TODA</option>
-                  {driverOptions.todas.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  className="form-select"
-                  style={{ width: 170 }}
-                  value={filterBrgy}
-                  onChange={(e) => setFilterBrgy(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <option value="ALL">All Barangays</option>
-                  {driverOptions.brgys.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  className="form-select"
-                  style={{ width: 170 }}
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <option value="ALL">All Status</option>
-                  {driverOptions.statuses.map((st) => (
-                    <option key={st} value={st}>
-                      {st}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="d-flex flex-wrap gap-2 align-items-center">
-                  <label className="form-check form-switch m-0">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      checked={hasViolations}
-                      onChange={(e) => setHasViolations(e.target.checked)}
-                    />
-                    <span className="form-check-label small">Has violations</span>
-                  </label>
-
-                  <label className="form-check form-switch m-0">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      checked={hasFranchise}
-                      onChange={(e) => setHasFranchise(e.target.checked)}
-                    />
-                    <span className="form-check-label small">Has franchise #</span>
-                  </label>
+      <div className="row g-3 mx-0">
+        <div className="col-12">
+          <div className="card rounded-4 shadow-sm border-0">
+            <div className="card-body">
+              <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <div className="text-muted small">
+                  Total records: <span className="fw-semibold">{rows.length}</span>
                 </div>
 
-                <input
-                  className="form-control"
-                  style={{ flex: "1 1 320px", minWidth: 280 }}
-                  placeholder="Search name, franchise, plate, address, contact, TODA..."
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </>
-            )}
-          </div>
-
-          {/* Table header */}
-          <div className="row px-3 text-muted small fw-semibold mb-2">
-            <div className="col-4 d-flex align-items-center gap-2">
-              <button
-                type="button"
-                className="btn btn-link p-0 text-decoration-none text-muted fw-semibold"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-                }}
-                title="Sort by name"
-              >
-                Name <span style={{ fontSize: 10 }}>{sortDir === "asc" ? "▼" : "▲"}</span>
-              </button>
-            </div>
-
-            {tab === "Enforcer" ? (
-              <>
-                <div className="col-3">ID Number</div>
-                <div className="col-3">Contact number</div>
-                <div className="col-2 d-flex justify-content-between">
-                  <span>Address</span>
-                  <span />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="col-3">Address</div>
-                <div className="col-3">Contact number</div>
-                <div className="col-2 d-flex justify-content-between">
-                  <span>TODA</span>
-                  <span />
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Rows */}
-          <div className="d-flex flex-column gap-3">
-            {filtered.map((item) => {
-              const isEnforcer = tab === "Enforcer";
-
-              return (
-                <div
-                  key={item.id}
-                  className="bg-white rounded-4 border"
-                  style={{ padding: 14, cursor: "pointer" }}
-                  onClick={() => goRow(item.id)}
+                <button
+                  className="btn btn-light btn-sm rounded-3 d-flex align-items-center gap-1"
+                  onClick={() =>
+                    setSortDir((prev) => (prev === "asc" ? "desc" : "asc"))
+                  }
                 >
-                  <div className="row align-items-center">
-                    <div className="col-4 d-flex align-items-center gap-2">
-                      <Avatar name={item.name} />
-                      <div className="d-flex flex-column">
-                        <div className="fw-semibold">{item.name}</div>
+                  <i className="bi bi-arrow-down-up"></i>
+                  Sort: {sortDir === "asc" ? "A-Z" : "Z-A"}
+                </button>
+              </div>
 
-                        {!isEnforcer && (
-                          <div className="small text-muted d-flex gap-2 align-items-center">
-                            <span>{item.franchiseNo || "—"}</span>
-                            <span>•</span>
-                            <TypeBadge type={item.type} />
-                          </div>
-                        )}
-                      </div>
-                    </div>
+              <div className="table-responsive">
+                <table className="tfro-table">
+                  <thead>
+                    <tr className="text-muted small">
+                      <th style={{ minWidth: 260 }}>Name</th>
 
-                    {isEnforcer ? (
-                      <>
-                        <div className="col-3">{item.idNumber}</div>
-                        <div className="col-3">{item.contact}</div>
+                      {tab === "Enforcer" ? (
+                        <>
+                          <th>ID Number</th>
+                          <th>Contact</th>
+                          <th>Address</th>
+                          <th className="text-end">Actions</th>
+                        </>
+                      ) : (
+                        <>
+                          <th>Type</th>
+                          <th>Contact</th>
+                          <th>Address</th>
+                          {tab !== "Colorum" && <th>TODA / Franchise</th>}
+                          <th className="text-end">Actions</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
 
-                        <div className="col-2 d-flex align-items-center justify-content-between position-relative">
-                          <div className="text-truncate" title={item.address}>
-                            {item.address}
-                          </div>
+                  <tbody>
+                    {rows.map((item) => {
+                      const isEnforcer = tab === "Enforcer";
+                      const firstVehicle = item.vehicles?.[0] || {};
 
-                          <button
-                            className="btn btn-sm btn-light"
-                            type="button"
-                            title="More"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenMenuId((cur) => (cur === item.id ? null : item.id));
-                            }}
-                            style={{ width: 36, height: 32 }}
-                          >
-                            ⋯
-                          </button>
+                      return (
+                        <tr key={item.id}>
+                          <td>
+                            <div className="d-flex align-items-center gap-3">
+                              <Avatar name={item.name} />
+                              <div>
+                                <div className="fw-semibold">{item.name}</div>
 
-                          {openMenuId === item.id && (
-                            <div
-                              className="dropdown-menu show"
-                              style={{
-                                position: "absolute",
-                                right: 8,
-                                top: 44,
-                                zIndex: 10,
-                                minWidth: 210,
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <button
-                                className="dropdown-item"
-                                type="button"
-                                onClick={() => nav(`/enforcers/${item.id}`)}
-                              >
-                                View Enforcer Information
-                              </button>
+                                {!isEnforcer && firstVehicle?.plateNo && (
+                                  <div className="small text-muted">
+                                    Plate No: {firstVehicle.plateNo}
+                                  </div>
+                                )}
+
+                                {isEnforcer && (
+                                  <div className="small text-muted">
+                                    Enforcer record
+                                  </div>
+                                )}
+                              </div>
                             </div>
+                          </td>
+
+                          {isEnforcer ? (
+                            <>
+                              <td>{item.idNumber || "—"}</td>
+                              <td>{item.contact || "—"}</td>
+                              <td>{item.address || "—"}</td>
+                              <td className="text-end">
+                                <div className="d-inline-flex align-items-center gap-2">
+                                  <button
+                                    className="btn btn-sm btn-light rounded-circle"
+                                    title="View Enforcer Information"
+                                    onClick={() => goToProfile(item.id)}
+                                  >
+                                    <i className="bi bi-eye" />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td>
+                                <TypeBadge type={item.type} />
+                              </td>
+                              <td>{item.contact || "—"}</td>
+                              <td>{item.address || "—"}</td>
+
+                              {tab !== "Colorum" && (
+                                <td>
+                                  <div>{item.toda || "—"}</div>
+                                  <div className="small text-muted">
+                                    Franchise: {item.franchiseNo || "—"}
+                                  </div>
+                                </td>
+                              )}
+
+                              <td className="text-end">
+                                <div className="d-inline-flex align-items-center gap-2">
+                                  <button
+                                    className="btn btn-sm btn-light rounded-circle"
+                                    title="View Driver Information"
+                                    onClick={() => goToProfile(item.id)}
+                                  >
+                                    <i className="bi bi-eye" />
+                                  </button>
+
+                                  <button
+                                    className="btn btn-sm btn-light rounded-circle"
+                                    title="View Transaction Details"
+                                    onClick={() => goToTransactions(item.id)}
+                                  >
+                                    <i className="bi bi-receipt" />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
                           )}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="col-3">{item.address}</div>
-                        <div className="col-3">{item.contact}</div>
+                        </tr>
+                      );
+                    })}
 
-                        <div className="col-2 d-flex align-items-center justify-content-between position-relative">
-                          <div>{item.toda}</div>
-
-                          <button
-                            className="btn btn-sm btn-light"
-                            type="button"
-                            title="More"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenMenuId((cur) => (cur === item.id ? null : item.id));
-                            }}
-                            style={{ width: 36, height: 32 }}
-                          >
-                            ⋯
-                          </button>
-
-                          {openMenuId === item.id && (
-                            <div
-                              className="dropdown-menu show"
-                              style={{
-                                position: "absolute",
-                                right: 8,
-                                top: 44,
-                                zIndex: 10,
-                                minWidth: 210,
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <button className="dropdown-item" type="button" onClick={() => nav(`/profiles/${item.id}`)}>
-                                View Driver Information
-                              </button>
-                              <button className="dropdown-item" type="button" onClick={() => goTransactions(item.id)}>
-                                View Transaction Details
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </>
+                    {rows.length === 0 && (
+                      <tr>
+                        <td colSpan={tab === "Enforcer" ? 5 : tab === "Colorum" ? 5 : 6} className="text-center text-muted py-5">
+                          No results.
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {filtered.length === 0 && <div className="text-center text-muted py-5">No records found.</div>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>
