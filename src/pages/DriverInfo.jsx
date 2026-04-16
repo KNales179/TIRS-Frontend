@@ -141,7 +141,7 @@ export default function DriverInfo() {
   const [selectedFranchiseId, setSelectedFranchiseId] = useState("");
 
   useEffect(() => {
-    setDraft(driver);
+    setDraft(driver || null);
     setIsEdit(false);
     setSelectedVehicleIndex(0);
     setSelectedFranchiseId(driver?.franchises?.[0]?.id || "");
@@ -150,54 +150,132 @@ export default function DriverInfo() {
   useEffect(() => {
     const styleId = "driver-info-print-style";
 
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement("style");
-      style.id = styleId;
-      style.innerHTML = `
-        @media print {
-          body * {
-            visibility: hidden;
-          }
+    if (document.getElementById(styleId)) return;
 
-          #print-driver-info,
-          #print-driver-info * {
-            visibility: visible;
-          }
-
-          #print-driver-info {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: #fff !important;
-          }
-
-          .no-print {
-            display: none !important;
-          }
-
-          .card,
-          .card-body {
-            box-shadow: none !important;
-            border: 0 !important;
-          }
-
-          table {
-            width: 100% !important;
-            border-collapse: collapse !important;
-          }
-
-          th, td {
-            border: 1px solid #ddd !important;
-          }
-
-          .table-responsive {
-            overflow: visible !important;
-          }
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.innerHTML = `
+      @media print {
+        @page {
+          size: auto;
+          margin: 10mm;
         }
-      `;
-      document.head.appendChild(style);
-    }
+
+        body * {
+          visibility: hidden;
+        }
+
+        #print-driver-info,
+        #print-driver-info * {
+          visibility: visible;
+        }
+
+        #print-driver-info {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          background: #fff !important;
+          color: #000 !important;
+        }
+
+        .no-print {
+          display: none !important;
+        }
+
+        .card,
+        .card-body {
+          box-shadow: none !important;
+          border: 0 !important;
+          background: #fff !important;
+        }
+
+        .table-responsive {
+          overflow: visible !important;
+        }
+
+        table {
+          width: 100% !important;
+          border-collapse: collapse !important;
+          page-break-inside: auto;
+        }
+
+        th,
+        td {
+          border: 1px solid #d9d9d9 !important;
+          padding: 8px 10px !important;
+          font-size: 12px !important;
+          vertical-align: top !important;
+        }
+
+        tr {
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+
+        .badge {
+          border: 1px solid #d9d9d9 !important;
+          color: #000 !important;
+          background: #fff !important;
+        }
+
+        #print-driver-info .print-top-layout {
+          display: grid !important;
+          grid-template-columns: 1.6fr 0.9fr !important;
+          gap: 24px !important;
+          align-items: start !important;
+        }
+
+        #print-driver-info .print-left,
+        #print-driver-info .print-right {
+          width: 100% !important;
+        }
+
+        #print-driver-info .print-right {
+          display: flex !important;
+          justify-content: center !important;
+          align-items: flex-start !important;
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+
+        #print-driver-info .print-photo-wrap {
+          text-align: center !important;
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+
+        #print-driver-info .print-photo {
+          width: 170px !important;
+          height: 170px !important;
+          border-radius: 50% !important;
+          overflow: hidden !important;
+          margin: 0 auto !important;
+          background: #f3d2ff !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+
+        #print-driver-info .print-photo img {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: cover !important;
+        }
+
+        #print-driver-info .print-type {
+          margin-top: 12px !important;
+          text-align: center !important;
+        }
+
+        #print-driver-info .print-top-layout,
+        #print-driver-info .print-photo-wrap {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
   }, []);
 
   if (!driver || !draft) {
@@ -297,8 +375,8 @@ export default function DriverInfo() {
 
       <div className="card rounded-4 shadow-sm border-0">
         <div className="card-body" id="print-driver-info">
-          <div className="row g-4 align-items-start">
-            <div className="col-lg-8">
+          <div className="row g-4 align-items-start print-top-layout">
+            <div className="col-lg-8 print-left">
               <div className="row g-3">
                 <div className="col-md-6">
                   <div className="text-muted small mb-1">Driver’s Name</div>
@@ -451,12 +529,73 @@ export default function DriverInfo() {
                                   cursor: "pointer",
                                 }}
                               >
-                                <td>{veh.motor || "—"}</td>
-                                <td>{veh.modelMake || "—"}</td>
-                                <td>{veh.engine || "—"}</td>
-                                <td>{veh.chassis || "—"}</td>
-                                <td>{veh.plateNo || "—"}</td>
+                                <td>
+                                  {isEdit ? (
+                                    <input
+                                      className="form-control form-control-sm"
+                                      value={veh.motor || ""}
+                                      onChange={setVehicle(index, "motor")}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  ) : (
+                                    veh.motor || "—"
+                                  )}
+                                </td>
+
+                                <td>
+                                  {isEdit ? (
+                                    <input
+                                      className="form-control form-control-sm"
+                                      value={veh.modelMake || ""}
+                                      onChange={setVehicle(index, "modelMake")}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  ) : (
+                                    veh.modelMake || "—"
+                                  )}
+                                </td>
+
+                                <td>
+                                  {isEdit ? (
+                                    <input
+                                      className="form-control form-control-sm"
+                                      value={veh.engine || ""}
+                                      onChange={setVehicle(index, "engine")}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  ) : (
+                                    veh.engine || "—"
+                                  )}
+                                </td>
+
+                                <td>
+                                  {isEdit ? (
+                                    <input
+                                      className="form-control form-control-sm"
+                                      value={veh.chassis || ""}
+                                      onChange={setVehicle(index, "chassis")}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  ) : (
+                                    veh.chassis || "—"
+                                  )}
+                                </td>
+
+                                <td>
+                                  {isEdit ? (
+                                    <input
+                                      className="form-control form-control-sm"
+                                      value={veh.plateNo || ""}
+                                      onChange={setVehicle(index, "plateNo")}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  ) : (
+                                    veh.plateNo || "—"
+                                  )}
+                                </td>
+
                                 <td>{getVehicleStatusBadge(veh.status)}</td>
+
                                 <td>
                                   <div className="d-flex flex-column align-items-start gap-1">
                                     <span className="badge rounded-pill bg-light text-dark border">
@@ -481,7 +620,7 @@ export default function DriverInfo() {
                                 ? true
                                 : franchise?.id === selectedFranchise?.id;
                             })
-                            .map((veh, index) => {
+                            .map((veh) => {
                               const originalIndex = vehicles.findIndex((v) => v === veh);
                               const franchise =
                                 franchises.find((f) => f.vehicleIndex === originalIndex) || null;
@@ -493,6 +632,7 @@ export default function DriverInfo() {
                                   style={{ background: "#eef2ff" }}
                                 >
                                   <td>{franchise?.number || draft.franchiseNo || "—"}</td>
+
                                   <td>
                                     {isEdit ? (
                                       <input
@@ -504,6 +644,7 @@ export default function DriverInfo() {
                                       veh.motor || "—"
                                     )}
                                   </td>
+
                                   <td>
                                     {isEdit ? (
                                       <input
@@ -515,6 +656,7 @@ export default function DriverInfo() {
                                       veh.modelMake || "—"
                                     )}
                                   </td>
+
                                   <td>
                                     {isEdit ? (
                                       <input
@@ -526,6 +668,7 @@ export default function DriverInfo() {
                                       veh.engine || "—"
                                     )}
                                   </td>
+
                                   <td>
                                     {isEdit ? (
                                       <input
@@ -537,6 +680,7 @@ export default function DriverInfo() {
                                       veh.chassis || "—"
                                     )}
                                   </td>
+
                                   <td>
                                     {isEdit ? (
                                       <input
@@ -548,7 +692,9 @@ export default function DriverInfo() {
                                       veh.plateNo || "—"
                                     )}
                                   </td>
+
                                   <td>{getVehicleStatusBadge(veh.status)}</td>
+
                                   <td>
                                     <div className="d-flex flex-column align-items-start gap-1">
                                       <span className="badge rounded-pill bg-light text-dark border">
@@ -630,19 +776,19 @@ export default function DriverInfo() {
                 </div>
               </div>
             </div>
-            <div className="col-lg-4 d-flex justify-content-center">
-              <div className="text-center">
+
+            <div className="col-lg-4 d-flex justify-content-center print-right">
+              <div className="text-center print-photo-wrap">
                 <div
-                  className="position-relative mx-auto"
+                  className="position-relative mx-auto print-photo"
                   style={{ width: 220, height: 220 }}
                 >
-                  {/* PROFILE IMAGE */}
                   <div
                     className="rounded-circle d-flex align-items-center justify-content-center overflow-hidden"
                     style={{
-                      width: 220,
-                      height: 220,
-                      background: "#e5e7eb", // soft gray like your sample
+                      width: "100%",
+                      height: "100%",
+                      background: "#e5e7eb",
                     }}
                   >
                     {draft.photoUrl ? (
@@ -659,7 +805,6 @@ export default function DriverInfo() {
                     )}
                   </div>
 
-                  {/* CAMERA BUTTON (BOTTOM RIGHT OVERLAY) */}
                   <label
                     className="position-absolute no-print d-flex align-items-center justify-content-center"
                     style={{
@@ -671,13 +816,12 @@ export default function DriverInfo() {
                       background: "#9ca3af",
                       color: "#fff",
                       cursor: "pointer",
-                      border: "4px solid #fff", // nice clean ring
+                      border: "4px solid #fff",
                       boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
                     }}
                     title="Upload Photo"
                   >
                     <i className="bi bi-plus-lg" style={{ fontSize: 20 }} />
-
                     <input
                       type="file"
                       accept="image/*"
@@ -687,12 +831,12 @@ export default function DriverInfo() {
                   </label>
                 </div>
 
-                {/* DRIVER TYPE */}
-                <div className="mt-3">{getDriverTypeBadge(driverType)}</div>
+                <div className="mt-3 print-type">{getDriverTypeBadge(driverType)}</div>
               </div>
             </div>
-            </div>
-            </div>
+          </div>
+        </div>
+
         <div className="d-flex justify-content-between align-items-center p-4 no-print">
           <button
             className="btn btn-primary rounded-4 px-4"
