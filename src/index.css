@@ -347,12 +347,45 @@ body {
 }
 
 .dashboard-table thead th {
-  color: #8a93a7;
+  color: #000000;
   font-size: 12px;
   font-weight: 700;
+  text-align: center;
   white-space: nowrap;
   padding-bottom: 14px;
 }
+
+.dashboard-table {
+  table-layout: auto;
+  width: 100%;
+}
+
+.dashboard-table th,
+.dashboard-table td {
+  vertical-align: middle;
+}
+
+/* Give breathing space but not too tight */
+.dashboard-table th:nth-child(1),
+.dashboard-table td:nth-child(1) {
+  min-width: 100px;
+}
+
+.dashboard-table th:nth-child(2),
+.dashboard-table td:nth-child(2) {
+  min-width: 120px;
+}
+
+.dashboard-table th:nth-child(3),
+.dashboard-table td:nth-child(3) {
+  min-width: 120px;
+}
+
+/* Let other columns flow naturally */
+.dashboard-table td {
+  white-space: nowrap;
+}
+
 
 .dashboard-table tbody td {
   padding-top: 14px;
@@ -368,25 +401,25 @@ body {
 }
 
 .dashboard-count-badge {
-  min-width: 56px;
+  min-width: 50px;
   padding: 6px 12px;
   border-radius: 12px;
   display: inline-block;
-  text-align: center;
   background: var(--info-bg);
   color: var(--info-text);
-  font-weight: 700;
+  font-weight: 500;
+  align-items: center;
 }
 
 .dashboard-status-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 110px;
+  min-width: 100px;
   padding: 7px 12px;
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .dashboard-status-badge.resolved {
@@ -488,10 +521,25 @@ body {
 .dashboard-panel .dashboard-date-input {
   min-height: 48px;
 }
-
-.dashboard-table tbody tr td:first-child {
-  min-width: 320px;
+.dashboard-table th:nth-child(5),
+.dashboard-table td:nth-child(5) {
+  text-align: center;
 }
+.dashboard-table td:nth-child(5) {
+  text-align: center;
+}
+
+.dashboard-count-badge {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+.dashboard-table th,
+.dashboard-table td {
+  text-align: center;
+  vertical-align: middle;
+}
+
 /* =========================
    12) TFRO Table Theme
    ========================= */

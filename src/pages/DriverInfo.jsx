@@ -140,6 +140,28 @@ export default function DriverInfo() {
   const [selectedVehicleIndex, setSelectedVehicleIndex] = useState(0);
   const [selectedFranchiseId, setSelectedFranchiseId] = useState("");
 
+  const [showAddVehicleModal, setShowAddVehicleModal] = useState(false);
+  const [newVehicle, setNewVehicle] = useState({
+    franchiseNo: "",
+    motor: "",
+    modelMake: "",
+    engine: "",
+    chassis: "",
+    plateNo: "",
+    status: "Available",
+  });
+
+  const [showAddViolationModal, setShowAddViolationModal] = useState(false);
+  const [newViolation, setNewViolation] = useState({
+    date: "",
+    violation: "",
+    location: "",
+    originalFine: "",
+    declaredFine: "",
+    status: "Pending",
+    apprehender: "",
+  });
+
   useEffect(() => {
     setDraft(driver || null);
     setIsEdit(false);
@@ -177,6 +199,44 @@ export default function DriverInfo() {
           width: 100%;
           background: #fff !important;
           color: #000 !important;
+          font-family: Arial, sans-serif !important;
+        }
+
+        #print-driver-info::before {
+          content: "Republic of the Philippines\\A Tricycle Franchising and Regulatory Office\\A DRIVER INFORMATION RECORD";
+          white-space: pre;
+          display: block;
+          text-align: center;
+          font-weight: bold;
+          font-size: 14px;
+          line-height: 1.5;
+          padding-bottom: 12px;
+          margin-bottom: 18px;
+          border-bottom: 4px solid #1d4ed8;
+          color: #111;
+        }
+
+        #print-driver-info .bg-light {
+          border: 1px solid #cbd5e1 !important;
+          background: #f8fafc !important;
+          border-radius: 6px !important;
+          padding: 8px 10px !important;
+          min-height: auto !important;
+        }
+
+        #print-driver-info .text-muted {
+          color: #334155 !important;
+          font-weight: bold !important;
+        }
+
+        #print-driver-info .fw-semibold {
+          font-size: 15px !important;
+          font-weight: bold !important;
+          color: #111 !important;
+          margin-top: 10px !important;
+          padding: 8px 10px !important;
+          background: #dbeafe !important;
+          border-left: 5px solid #1d4ed8 !important;
         }
 
         .no-print {
@@ -200,12 +260,26 @@ export default function DriverInfo() {
           page-break-inside: auto;
         }
 
-        th,
-        td {
-          border: 1px solid #d9d9d9 !important;
+        th {
+          border: 1px solid #111 !important;
           padding: 8px 10px !important;
-          font-size: 12px !important;
+          font-size: 11px !important;
           vertical-align: top !important;
+          background: #1d4ed8 !important;
+          color: #fff !important;
+          font-weight: bold !important;
+        }
+
+        td {
+          border: 1px solid #111 !important;
+          padding: 8px 10px !important;
+          font-size: 11px !important;
+          vertical-align: top !important;
+          color: #111 !important;
+        }
+
+        tr:nth-child(even) td {
+          background: #eef4ff !important;
         }
 
         tr {
@@ -347,6 +421,162 @@ export default function DriverInfo() {
     setSelectedVehicleIndex(index);
   }
 
+  function handleNewVehicleChange(key, value) {
+    setNewVehicle((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
+  function resetNewVehicleForm() {
+    setNewVehicle({
+      franchiseNo: "",
+      motor: "",
+      modelMake: "",
+      engine: "",
+      chassis: "",
+      plateNo: "",
+      status: "Available",
+    });
+  }
+
+  function handleCloseAddVehicleModal() {
+    setShowAddVehicleModal(false);
+    resetNewVehicleForm();
+  }
+
+  function handleAddVehicle(e) {
+    e.preventDefault();
+
+    if (!newVehicle.motor || !newVehicle.modelMake || !newVehicle.plateNo) {
+      alert("Please complete Motor, Model/Make, and Plate Number.");
+      return;
+    }
+
+    if (!isColorum && !newVehicle.franchiseNo) {
+      alert("Please enter Franchise Number.");
+      return;
+    }
+
+    const vehicleToAdd = {
+      motor: newVehicle.motor,
+      modelMake: newVehicle.modelMake,
+      engine: newVehicle.engine,
+      chassis: newVehicle.chassis,
+      plateNo: newVehicle.plateNo,
+      status: newVehicle.status,
+      violations: [],
+    };
+
+    const newFranchiseId = `fr-${Date.now()}`;
+
+    setDraft((prev) => {
+      const nextVehicles = [...(prev.vehicles || []), vehicleToAdd];
+      const newVehicleIndex = nextVehicles.length - 1;
+
+      const nextFranchises = isColorum
+        ? prev.franchises || []
+        : [
+            ...(prev.franchises || []),
+            {
+              id: newFranchiseId,
+              number: newVehicle.franchiseNo,
+              vehicleIndex: newVehicleIndex,
+            },
+          ];
+
+      return {
+        ...prev,
+        vehicles: nextVehicles,
+        franchises: nextFranchises,
+        franchiseNo: prev.franchiseNo || newVehicle.franchiseNo,
+      };
+    });
+
+    if (isColorum) {
+      setSelectedVehicleIndex(vehicles.length);
+    } else {
+      setSelectedFranchiseId(newFranchiseId);
+    }
+
+    setShowAddVehicleModal(false);
+    resetNewVehicleForm();
+  }
+
+  function handleNewViolationChange(key, value) {
+    setNewViolation((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
+  function resetNewViolationForm() {
+    setNewViolation({
+      date: "",
+      violation: "",
+      location: "",
+      originalFine: "",
+      declaredFine: "",
+      status: "Pending",
+      apprehender: "",
+    });
+  }
+
+  function handleOpenAddViolationModal() {
+    if (!selectedVehicle) {
+      alert("Please select a vehicle first.");
+      return;
+    }
+
+    setShowAddViolationModal(true);
+  }
+
+  function handleCloseAddViolationModal() {
+    setShowAddViolationModal(false);
+    resetNewViolationForm();
+  }
+
+  function handleAddViolation(e) {
+    e.preventDefault();
+
+    if (!newViolation.date || !newViolation.violation || !newViolation.apprehender) {
+      alert("Please complete Date, Violation, and Apprehender.");
+      return;
+    }
+
+    const targetVehicleIndex = resolvedVehicleIndex;
+
+    const violationToAdd = {
+      date: newViolation.date,
+      violation: newViolation.violation,
+      location: newViolation.location,
+      originalFine: newViolation.originalFine,
+      declaredFine: newViolation.declaredFine,
+      status: newViolation.status,
+      apprehender: newViolation.apprehender,
+    };
+
+    setDraft((prev) => {
+      const nextVehicles = [...(prev.vehicles || [])];
+
+      nextVehicles[targetVehicleIndex] = {
+        ...(nextVehicles[targetVehicleIndex] || {}),
+        violations: [
+          ...((nextVehicles[targetVehicleIndex] || {}).violations || []),
+          violationToAdd,
+        ],
+      };
+
+      return {
+        ...prev,
+        vehicles: nextVehicles,
+      };
+    });
+
+    setShowAddViolationModal(false);
+    resetNewViolationForm();
+  }
+
   return (
     <div>
       <div className="d-flex align-items-center justify-content-between mb-3 no-print">
@@ -486,10 +716,8 @@ export default function DriverInfo() {
                     <div className="fw-semibold mb-0">
                       {isColorum ? "Vehicle Records" : "Franchise / Vehicle Records"}
                     </div>
-                    <div className="small text-muted">
-                      {isColorum
-                        ? "Select a vehicle record to view its violations"
-                        : "One franchise corresponds to one vehicle"}
+                    <div className="small text-muted no-print">
+                      {isColorum ? "Select a vehicle record to view its violations" : ""}
                     </div>
                   </div>
 
@@ -717,8 +945,16 @@ export default function DriverInfo() {
                 </div>
 
                 <div className="col-12 mt-2">
-                  <div className="fw-semibold mb-2">
-                    Violation History {selectedVehicle ? `(${violations.length})` : ""}
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <div className="fw-semibold mb-0">Violation History</div>
+
+                    <button
+                      className="btn btn-sm btn-primary rounded-4 px-3 no-print"
+                      type="button"
+                      onClick={handleOpenAddViolationModal}
+                    >
+                      + Add Violation
+                    </button>
                   </div>
 
                   <div className="table-responsive">
@@ -765,7 +1001,7 @@ export default function DriverInfo() {
                     </table>
                   </div>
 
-                  <div className="mt-2">
+                  <div className="mt-2 no-print">
                     <Link
                       to={`/profiles/${driver.id}/transactions`}
                       className="link-primary"
@@ -841,9 +1077,9 @@ export default function DriverInfo() {
           <button
             className="btn btn-primary rounded-4 px-4"
             type="button"
-            onClick={() => alert("Next step: Add new franchise/vehicle entry")}
+            onClick={() => setShowAddVehicleModal(true)}
           >
-            + Add New
+            + Add New Vehicle
           </button>
 
           <div className="d-flex gap-3">
@@ -867,6 +1103,294 @@ export default function DriverInfo() {
           </div>
         </div>
       </div>
+
+      {showAddVehicleModal && (
+        <>
+          <div className="modal fade show d-block" tabIndex="-1">
+            <div className="modal-dialog modal-dialog-centered modal-lg">
+              <div className="modal-content border-0 rounded-4 shadow">
+                <form onSubmit={handleAddVehicle}>
+                  <div className="modal-header border-0 pb-0">
+                    <div>
+                      <h5 className="modal-title fw-bold">
+                        {isColorum
+                          ? "Add New Vehicle Record"
+                          : "Add New Franchise / Vehicle Record"}
+                      </h5>
+                      <div className="text-muted small">
+                        {isColorum
+                          ? "This will add a new vehicle row to this driver profile."
+                          : "This will add a new franchise and link it to a new vehicle record."}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn-close"
+                      onClick={handleCloseAddVehicleModal}
+                    />
+                  </div>
+
+                  <div className="modal-body">
+                    <div className="row g-3">
+                      {!isColorum && (
+                        <div className="col-md-6">
+                          <label className="form-label small text-muted">
+                            Franchise Number
+                          </label>
+                          <input
+                            className="form-control rounded-4"
+                            placeholder="Example: TFRO-001"
+                            value={newVehicle.franchiseNo}
+                            onChange={(e) =>
+                              handleNewVehicleChange("franchiseNo", e.target.value)
+                            }
+                          />
+                        </div>
+                      )}
+
+                      <div className="col-md-6">
+                        <label className="form-label small text-muted">Motor</label>
+                        <input
+                          className="form-control rounded-4"
+                          placeholder="Example: Tricycle"
+                          value={newVehicle.motor}
+                          onChange={(e) =>
+                            handleNewVehicleChange("motor", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small text-muted">Model/Make</label>
+                        <input
+                          className="form-control rounded-4"
+                          placeholder="Example: Honda TMX"
+                          value={newVehicle.modelMake}
+                          onChange={(e) =>
+                            handleNewVehicleChange("modelMake", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small text-muted">Engine</label>
+                        <input
+                          className="form-control rounded-4"
+                          placeholder="Engine number"
+                          value={newVehicle.engine}
+                          onChange={(e) =>
+                            handleNewVehicleChange("engine", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small text-muted">Chassis</label>
+                        <input
+                          className="form-control rounded-4"
+                          placeholder="Chassis number"
+                          value={newVehicle.chassis}
+                          onChange={(e) =>
+                            handleNewVehicleChange("chassis", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small text-muted">Plate Number</label>
+                        <input
+                          className="form-control rounded-4"
+                          placeholder="Plate number"
+                          value={newVehicle.plateNo}
+                          onChange={(e) =>
+                            handleNewVehicleChange("plateNo", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small text-muted">Status</label>
+                        <select
+                          className="form-select rounded-4"
+                          value={newVehicle.status}
+                          onChange={(e) =>
+                            handleNewVehicleChange("status", e.target.value)
+                          }
+                        >
+                          <option value="Available">Available</option>
+                          <option value="Temporary">Temporary</option>
+                          <option value="Unavailable">Unavailable</option>
+                          <option value="Impounded">Impounded</option>
+                          <option value="Colorum">Colorum</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="modal-footer border-0 pt-0">
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary rounded-4 px-4"
+                      onClick={handleCloseAddVehicleModal}
+                    >
+                      Cancel
+                    </button>
+
+                    <button type="submit" className="btn btn-primary rounded-4 px-4">
+                      {isColorum ? "Add Vehicle" : "Add Franchise / Vehicle"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <div className="modal-backdrop fade show" />
+        </>
+      )}
+
+      {showAddViolationModal && (
+        <>
+          <div className="modal fade show d-block" tabIndex="-1">
+            <div className="modal-dialog modal-dialog-centered modal-lg">
+              <div className="modal-content border-0 rounded-4 shadow">
+                <form onSubmit={handleAddViolation}>
+                  <div className="modal-header border-0 pb-0">
+                    <div>
+                      <h5 className="modal-title fw-bold">Add Violation</h5>
+                      <div className="text-muted small">
+                        This violation will be added to the currently selected vehicle record.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn-close"
+                      onClick={handleCloseAddViolationModal}
+                    />
+                  </div>
+
+                  <div className="modal-body">
+                    <div className="row g-3">
+                      <div className="col-md-6">
+                        <label className="form-label small text-muted">Date</label>
+                        <input
+                          type="date"
+                          className="form-control rounded-4"
+                          value={newViolation.date}
+                          onChange={(e) =>
+                            handleNewViolationChange("date", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small text-muted">Violation</label>
+                        <input
+                          className="form-control rounded-4"
+                          placeholder="Example: Illegal parking"
+                          value={newViolation.violation}
+                          onChange={(e) =>
+                            handleNewViolationChange("violation", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small text-muted">Location</label>
+                        <input
+                          className="form-control rounded-4"
+                          placeholder="Violation location"
+                          value={newViolation.location}
+                          onChange={(e) =>
+                            handleNewViolationChange("location", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small text-muted">Apprehender</label>
+                        <input
+                          className="form-control rounded-4"
+                          placeholder="Officer name"
+                          value={newViolation.apprehender}
+                          onChange={(e) =>
+                            handleNewViolationChange("apprehender", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-4">
+                        <label className="form-label small text-muted">
+                          Original Fine
+                        </label>
+                        <input
+                          type="number"
+                          className="form-control rounded-4"
+                          placeholder="0"
+                          value={newViolation.originalFine}
+                          onChange={(e) =>
+                            handleNewViolationChange("originalFine", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-4">
+                        <label className="form-label small text-muted">
+                          Declared Fine
+                        </label>
+                        <input
+                          type="number"
+                          className="form-control rounded-4"
+                          placeholder="0"
+                          value={newViolation.declaredFine}
+                          onChange={(e) =>
+                            handleNewViolationChange("declaredFine", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div className="col-md-4">
+                        <label className="form-label small text-muted">Status</label>
+                        <select
+                          className="form-select rounded-4"
+                          value={newViolation.status}
+                          onChange={(e) =>
+                            handleNewViolationChange("status", e.target.value)
+                          }
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="On Process">On Process</option>
+                          <option value="Paid">Paid</option>
+                          <option value="Settled">Settled</option>
+                          <option value="Done">Done</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="modal-footer border-0 pt-0">
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary rounded-4 px-4"
+                      onClick={handleCloseAddViolationModal}
+                    >
+                      Cancel
+                    </button>
+
+                    <button type="submit" className="btn btn-primary rounded-4 px-4">
+                      Add Violation
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <div className="modal-backdrop fade show" />
+        </>
+      )}
     </div>
   );
 }

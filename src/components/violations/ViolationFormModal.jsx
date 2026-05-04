@@ -1,4 +1,5 @@
 import React from "react";
+import { violationsMaster } from "../../data/violationsMaster";
 
 function formatDateInput(value) {
   const digits = value.replace(/\D/g, "").slice(0, 8);
@@ -6,6 +7,21 @@ function formatDateInput(value) {
   if (digits.length <= 2) return digits;
   if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function computePayableAmount(totalAmount, discountType, discountValue) {
+  const baseAmount = Number(totalAmount || 0);
+  const discount = Number(discountValue || 0);
+
+  if (discountType === "Fixed") {
+    return Math.max(baseAmount - discount, 0);
+  }
+
+  if (discountType === "Percent") {
+    return Math.max(baseAmount - (baseAmount * discount) / 100, 0);
+  }
+
+  return baseAmount;
 }
 
 export default function ViolationFormModal({
@@ -18,10 +34,53 @@ export default function ViolationFormModal({
 }) {
   if (!show) return null;
 
+  const payableAmount = computePayableAmount(
+    formData.totalAmount,
+    formData.discountType,
+    formData.discountValue
+  );
+
   function handleFieldChange(field, value) {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
+    }));
+  }
+
+  function handleViolationSelect(code) {
+    const selected = violationsMaster.find((item) => item.code === code);
+
+    setFormData((prev) => ({
+      ...prev,
+      violationCode: selected?.code || "",
+      violation: selected?.name || "",
+      violationGroup: selected?.group || "",
+      offenseLevel: selected?.offenseLevel || "",
+      totalAmount: selected?.penalty || "",
+      payableAmount: computePayableAmount(
+        selected?.penalty || "",
+        prev.discountType,
+        prev.discountValue
+      ),
+    }));
+  }
+
+  function handleDiscountTypeChange(value) {
+    setFormData((prev) => ({
+      ...prev,
+      discountType: value,
+      discountValue: "",
+      discountReason: value === "None" ? "" : prev.discountReason,
+      discountApprovedBy: value === "None" ? "" : prev.discountApprovedBy,
+      payableAmount: computePayableAmount(prev.totalAmount, value, ""),
+    }));
+  }
+
+  function handleDiscountValueChange(value) {
+    setFormData((prev) => ({
+      ...prev,
+      discountValue: value,
+      payableAmount: computePayableAmount(prev.totalAmount, prev.discountType, value),
     }));
   }
 
@@ -74,11 +133,21 @@ export default function ViolationFormModal({
                   onChange={(val) => handleFieldChange("ticketNo", val)}
                 />
 
-                <FormInput
-                  label="Violation"
-                  value={formData.violation}
-                  onChange={(val) => handleFieldChange("violation", val)}
-                />
+                <div className="col-md-6">
+                  <label className="form-label">Violation</label>
+                  <select
+                    className="form-select"
+                    value={formData.violationCode || ""}
+                    onChange={(e) => handleViolationSelect(e.target.value)}
+                  >
+                    <option value="">Select violation</option>
+                    {violationsMaster.map((item) => (
+                      <option key={item.code} value={item.code}>
+                        {item.code} - {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 <FormInput
                   label="Violation Date"
@@ -111,11 +180,67 @@ export default function ViolationFormModal({
                   </select>
                 </div>
 
+                <div className="col-md-6">
+                  <label className="form-label">Official Penalty</label>
+                  <input
+                    className="form-control"
+                    type="number"
+                    value={formData.totalAmount}
+                    readOnly
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label">Discount Type</label>
+                  <select
+                    className="form-select"
+                    value={formData.discountType || "None"}
+                    onChange={(e) => handleDiscountTypeChange(e.target.value)}
+                  >
+                    <option value="None">None</option>
+                    <option value="Fixed">Fixed Amount</option>
+                    <option value="Percent">Percentage</option>
+                  </select>
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label">
+                    {formData.discountType === "Percent"
+                      ? "Discount Percentage"
+                      : "Discount Value"}
+                  </label>
+                  <input
+                    className="form-control"
+                    type="number"
+                    value={formData.discountValue || ""}
+                    onChange={(e) => handleDiscountValueChange(e.target.value)}
+                    disabled={formData.discountType === "None"}
+                    placeholder={
+                      formData.discountType === "Percent" ? "Enter %" : "Enter amount"
+                    }
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label">Payable Amount</label>
+                  <input
+                    className="form-control"
+                    type="number"
+                    value={payableAmount}
+                    readOnly
+                  />
+                </div>
+
                 <FormInput
-                  label="Total Amount"
-                  type="number"
-                  value={formData.totalAmount}
-                  onChange={(val) => handleFieldChange("totalAmount", val)}
+                  label="Discount Reason"
+                  value={formData.discountReason || ""}
+                  onChange={(val) => handleFieldChange("discountReason", val)}
+                />
+
+                <FormInput
+                  label="Approved By"
+                  value={formData.discountApprovedBy || ""}
+                  onChange={(val) => handleFieldChange("discountApprovedBy", val)}
                 />
 
                 <FormInput

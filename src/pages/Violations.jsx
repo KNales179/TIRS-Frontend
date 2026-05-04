@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { violations as seed } from "../data/violationsMock";
+import { violationsMaster } from "../data/violationsMaster";
 import ViolationFormModal from "../components/violations/ViolationFormModal";
 import ViolationViewModal from "../components/violations/ViolationViewModal";
 
@@ -14,6 +15,31 @@ function deriveStatus(v) {
   if (v?.status) return v.status;
   if (!v?.datePaid) return "New";
   return "On Process";
+}
+
+function formatDateInput(value) {
+  const digits = String(value || "")
+    .replace(/\D/g, "")
+    .slice(0, 8);
+
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function computePayableAmount(totalAmount, discountType, discountValue) {
+  const baseAmount = Number(totalAmount || 0);
+  const discount = Number(discountValue || 0);
+
+  if (discountType === "Fixed") {
+    return Math.max(baseAmount - discount, 0);
+  }
+
+  if (discountType === "Percent") {
+    return Math.max(baseAmount - (baseAmount * discount) / 100, 0);
+  }
+
+  return baseAmount;
 }
 
 function openPrintWindow(title, htmlBody) {
@@ -97,11 +123,19 @@ function openPrintWindow(title, htmlBody) {
 function getEmptyViolationForm() {
   return {
     ticketNo: "",
+    violationCode: "",
     violation: "",
+    violationGroup: "",
+    offenseLevel: "",
     violationDate: "",
     driverName: "",
     classification: "Colorum",
     totalAmount: "",
+    discountType: "None",
+    discountValue: "",
+    payableAmount: "",
+    discountReason: "",
+    discountApprovedBy: "",
     datePaid: "",
     orNumber: "",
     enforcers: [""],
@@ -114,15 +148,21 @@ export default function Violations() {
   const [mode, setMode] = useState("Task");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [violationCodeFilter, setViolationCodeFilter] = useState("All");
+  const [violationFilter, setViolationFilter] = useState("All");
+  const [violationDateFilter, setViolationDateFilter] = useState("");
+  const [classificationFilter, setClassificationFilter] = useState("All");
   const [data, setData] = useState(seed);
 
   const [cols, setCols] = useState({
     ticketNo: true,
+    violationCode: true,
     violation: true,
     violationDate: true,
     driverName: true,
     classification: true,
     totalAmount: true,
+    payableAmount: true,
     datePaid: true,
     orNumber: true,
     enforcers: true,
@@ -137,6 +177,24 @@ export default function Violations() {
 
   const [viewRow, setViewRow] = useState(null);
 
+  const violationCodeOptions = useMemo(() => {
+    const masterCodes = violationsMaster.map((item) => item.code);
+    const existingCodes = data.map((item) => item.violationCode).filter(Boolean);
+
+    return ["All", ...new Set([...masterCodes, ...existingCodes])];
+  }, [data]);
+
+  const violationOptions = useMemo(() => {
+    const masterNames = violationsMaster.map((item) => item.name);
+    const existingNames = data.map((item) => item.violation).filter(Boolean);
+
+    return ["All", ...new Set([...masterNames, ...existingNames])];
+  }, [data]);
+
+  const classificationOptions = useMemo(() => {
+    return ["All", ...new Set(data.map((v) => v.classification).filter(Boolean))];
+  }, [data]);
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
 
@@ -145,11 +203,15 @@ export default function Violations() {
       : data.filter((v) =>
           [
             v.ticketNo,
+            v.violationCode,
             v.violation,
+            v.violationGroup,
             v.driverName,
             v.classification,
             v.orNumber,
             v.enforcers,
+            v.discountReason,
+            v.discountApprovedBy,
           ]
             .join(" ")
             .toLowerCase()
@@ -160,8 +222,32 @@ export default function Violations() {
       list = list.filter((v) => deriveStatus(v) === statusFilter);
     }
 
+    if (violationCodeFilter !== "All") {
+      list = list.filter((v) => v.violationCode === violationCodeFilter);
+    }
+
+    if (violationFilter !== "All") {
+      list = list.filter((v) => v.violation === violationFilter);
+    }
+
+    if (classificationFilter !== "All") {
+      list = list.filter((v) => v.classification === classificationFilter);
+    }
+
+    if (violationDateFilter.trim()) {
+      list = list.filter((v) => v.violationDate === violationDateFilter.trim());
+    }
+
     return list;
-  }, [data, query, statusFilter]);
+  }, [
+    data,
+    query,
+    statusFilter,
+    violationCodeFilter,
+    violationFilter,
+    violationDateFilter,
+    classificationFilter,
+  ]);
 
   const grouped = useMemo(() => {
     const g = { New: [], "On Process": [], Done: [] };
@@ -191,8 +277,16 @@ export default function Violations() {
     setFormMode("edit");
     setSelectedRow(v);
     setFormData({
+      ...getEmptyViolationForm(),
       ...v,
       totalAmount: v.totalAmount || "",
+      discountType: v.discountType || "None",
+      discountValue: v.discountValue || "",
+      payableAmount:
+        v.payableAmount ??
+        computePayableAmount(v.totalAmount, v.discountType, v.discountValue),
+      discountReason: v.discountReason || "",
+      discountApprovedBy: v.discountApprovedBy || "",
       commissionRate: v.commissionRate || 0.2,
       datePaid: v.datePaid || "",
       orNumber: v.orNumber || "",
@@ -215,11 +309,14 @@ export default function Violations() {
   function handleSaveForm() {
     if (
       !formData.ticketNo.trim() ||
+      !formData.violationCode.trim() ||
       !formData.violation.trim() ||
       !formData.violationDate.trim() ||
       !formData.driverName.trim()
     ) {
-      alert("Please fill in Ticket No., Violation, Violation Date, and Driver’s Name.");
+      alert(
+        "Please fill in Ticket No., Violation, Violation Date, and Driver’s Name."
+      );
       return;
     }
 
@@ -228,14 +325,32 @@ export default function Violations() {
       return;
     }
 
+    if (
+      formData.discountType !== "None" &&
+      (!formData.discountReason || !formData.discountApprovedBy)
+    ) {
+      alert("Please fill in Discount Reason and Approved By.");
+      return;
+    }
+
+    const baseAmount = Number(formData.totalAmount || 0);
+    const payableAmount = computePayableAmount(
+      baseAmount,
+      formData.discountType,
+      formData.discountValue
+    );
+
     const payload = {
       ...formData,
       enforcers: formData.enforcers
         .map((name) => name.trim())
         .filter(Boolean)
         .join(", "),
-      totalAmount: Number(formData.totalAmount || 0),
+      totalAmount: baseAmount,
+      discountValue: Number(formData.discountValue || 0),
+      payableAmount,
       commissionRate: Number(formData.commissionRate || 0),
+      offenseLevel: Number(formData.offenseLevel || 0),
       datePaid: formData.datePaid || null,
       orNumber: formData.orNumber || null,
       status: formData.status || "New",
@@ -276,7 +391,7 @@ export default function Violations() {
   }
 
   function handlePrint(v) {
-    const commission = (v.totalAmount || 0) * (v.commissionRate || 0);
+    const commission = (v.payableAmount || v.totalAmount || 0) * (v.commissionRate || 0);
     const status = deriveStatus(v);
 
     openPrintWindow(
@@ -292,6 +407,11 @@ export default function Violations() {
             <div class="item">
               <div class="label">Ticket No.</div>
               <div class="value">${v.ticketNo || "—"}</div>
+            </div>
+
+            <div class="item">
+              <div class="label">Violation Code</div>
+              <div class="value">${v.violationCode || "—"}</div>
             </div>
 
             <div class="item">
@@ -315,8 +435,37 @@ export default function Violations() {
             </div>
 
             <div class="item">
-              <div class="label">Total Amount</div>
+              <div class="label">Official Penalty</div>
               <div class="value">${money(v.totalAmount)}</div>
+            </div>
+
+            <div class="item">
+              <div class="label">Payable Amount</div>
+              <div class="value">${money(v.payableAmount ?? v.totalAmount)}</div>
+            </div>
+
+            <div class="item">
+              <div class="label">Discount Type</div>
+              <div class="value">${v.discountType || "None"}</div>
+            </div>
+
+            <div class="item">
+              <div class="label">Discount Value</div>
+              <div class="value">${
+                v.discountType === "Percent"
+                  ? `${Number(v.discountValue || 0)}%`
+                  : money(v.discountValue || 0)
+              }</div>
+            </div>
+
+            <div class="item">
+              <div class="label">Discount Reason</div>
+              <div class="value">${v.discountReason || "—"}</div>
+            </div>
+
+            <div class="item">
+              <div class="label">Approved By</div>
+              <div class="value">${v.discountApprovedBy || "—"}</div>
             </div>
 
             <div class="item">
@@ -362,6 +511,14 @@ export default function Violations() {
     }
   }
 
+  function clearAllFilters() {
+    setStatusFilter("All");
+    setViolationCodeFilter("All");
+    setViolationFilter("All");
+    setViolationDateFilter("");
+    setClassificationFilter("All");
+  }
+
   return (
     <div className="container-fluid">
       <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -385,7 +542,7 @@ export default function Violations() {
             onClick={handleAddViolation}
             type="button"
           >
-            + Add Violation
+            + Add Violators
           </button>
         </div>
       </div>
@@ -395,7 +552,7 @@ export default function Violations() {
           className={headerButtonClass(mode === "Task")}
           onClick={() => {
             setMode("Task");
-            setStatusFilter("All");
+            clearAllFilters();
           }}
           type="button"
         >
@@ -450,26 +607,96 @@ export default function Violations() {
             <div className="card rounded-4 shadow-sm border-0">
               <div className="card-body">
                 <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="text-muted small">Status:</span>
+                  <div className="d-flex flex-wrap align-items-end gap-2">
+                    <div>
+                      <span className="text-muted small d-block mb-1">Status</span>
+                      <select
+                        className="form-select form-select-sm"
+                        style={{ width: 150 }}
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                      >
+                        <option value="All">All</option>
+                        <option value="New">New</option>
+                        <option value="On Process">On Process</option>
+                        <option value="Done">Done</option>
+                      </select>
+                    </div>
 
-                    <select
-                      className="form-select form-select-sm"
-                      style={{ width: 170 }}
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                    >
-                      <option value="All">All</option>
-                      <option value="New">New</option>
-                      <option value="On Process">On Process</option>
-                      <option value="Done">Done</option>
-                    </select>
+                    <div>
+                      <span className="text-muted small d-block mb-1">Code</span>
+                      <select
+                        className="form-select form-select-sm"
+                        style={{ width: 130 }}
+                        value={violationCodeFilter}
+                        onChange={(e) => setViolationCodeFilter(e.target.value)}
+                      >
+                        {violationCodeOptions.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                    {statusFilter !== "All" && (
+                    <div>
+                      <span className="text-muted small d-block mb-1">Violation</span>
+                      <select
+                        className="form-select form-select-sm"
+                        style={{ width: 240 }}
+                        value={violationFilter}
+                        onChange={(e) => setViolationFilter(e.target.value)}
+                      >
+                        {violationOptions.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <span className="text-muted small d-block mb-1">
+                        Violation Date
+                      </span>
+                      <input
+                        className="form-control form-control-sm"
+                        style={{ width: 150 }}
+                        placeholder="MM/DD/YYYY"
+                        value={violationDateFilter}
+                        onChange={(e) =>
+                          setViolationDateFilter(formatDateInput(e.target.value))
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <span className="text-muted small d-block mb-1">
+                        Classification
+                      </span>
+                      <select
+                        className="form-select form-select-sm"
+                        style={{ width: 160 }}
+                        value={classificationFilter}
+                        onChange={(e) => setClassificationFilter(e.target.value)}
+                      >
+                        {classificationOptions.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {(statusFilter !== "All" ||
+                      violationCodeFilter !== "All" ||
+                      violationFilter !== "All" ||
+                      classificationFilter !== "All" ||
+                      violationDateFilter) && (
                       <button
                         className="btn btn-sm btn-light"
-                        onClick={() => setStatusFilter("All")}
                         type="button"
+                        onClick={clearAllFilters}
                       >
                         Clear
                       </button>
@@ -491,6 +718,13 @@ export default function Violations() {
                         label="Ticket Number"
                         checked={cols.ticketNo}
                         onChange={(v) => setCols((c) => ({ ...c, ticketNo: v }))}
+                      />
+                      <FilterCheck
+                        label="Violation Code"
+                        checked={cols.violationCode}
+                        onChange={(v) =>
+                          setCols((c) => ({ ...c, violationCode: v }))
+                        }
                       />
                       <FilterCheck
                         label="Violation"
@@ -517,9 +751,16 @@ export default function Violations() {
                         }
                       />
                       <FilterCheck
-                        label="Total Amount"
+                        label="Official Penalty"
                         checked={cols.totalAmount}
                         onChange={(v) => setCols((c) => ({ ...c, totalAmount: v }))}
+                      />
+                      <FilterCheck
+                        label="Payable Amount"
+                        checked={cols.payableAmount}
+                        onChange={(v) =>
+                          setCols((c) => ({ ...c, payableAmount: v }))
+                        }
                       />
                       <FilterCheck
                         label="Date Paid"
@@ -555,11 +796,13 @@ export default function Violations() {
                     <thead>
                       <tr className="text-muted small">
                         {cols.ticketNo && <th>Ticket No.</th>}
+                        {cols.violationCode && <th>Code</th>}
                         {cols.violation && <th>Violation</th>}
                         {cols.violationDate && <th>Violation Date</th>}
                         {cols.driverName && <th>Driver’s Name</th>}
                         {cols.classification && <th>Classification</th>}
-                        {cols.totalAmount && <th>Total Amount</th>}
+                        {cols.totalAmount && <th>Official Penalty</th>}
+                        {cols.payableAmount && <th>Payable Amount</th>}
                         {cols.datePaid && <th>Date Paid</th>}
                         {cols.orNumber && <th>OR number</th>}
                         {cols.enforcers && <th>Enforcer(s)</th>}
@@ -571,12 +814,15 @@ export default function Violations() {
 
                     <tbody>
                       {rows.map((v) => {
-                        const commission = (v.totalAmount || 0) * (v.commissionRate || 0);
+                        const commission =
+                          (v.payableAmount ?? v.totalAmount ?? 0) *
+                          (v.commissionRate || 0);
                         const status = deriveStatus(v);
 
                         return (
                           <tr key={v.ticketNo}>
                             {cols.ticketNo && <td>{v.ticketNo}</td>}
+                            {cols.violationCode && <td>{v.violationCode || "—"}</td>}
                             {cols.violation && <td>{v.violation}</td>}
                             {cols.violationDate && <td>{v.violationDate}</td>}
                             {cols.driverName && <td>{v.driverName}</td>}
@@ -584,6 +830,11 @@ export default function Violations() {
                             {cols.totalAmount && (
                               <td className="text-danger fw-semibold">
                                 {money(v.totalAmount || 0)}
+                              </td>
+                            )}
+                            {cols.payableAmount && (
+                              <td className="text-success fw-semibold">
+                                {money(v.payableAmount ?? v.totalAmount ?? 0)}
                               </td>
                             )}
                             {cols.datePaid && (
@@ -745,11 +996,13 @@ function TaskSection({
             <thead>
               <tr>
                 <th>Ticket No.</th>
+                <th>Code</th>
                 <th>Violation</th>
                 <th>Violation Date</th>
                 <th>Driver’s Name</th>
                 <th>Classification</th>
-                <th>Total Amount</th>
+                <th>Official Penalty</th>
+                <th>Payable Amount</th>
                 <th>Date Paid</th>
                 <th>OR number</th>
                 <th className="text-end">Actions</th>
@@ -760,12 +1013,16 @@ function TaskSection({
               {rows.slice(0, 5).map((v) => (
                 <tr key={v.ticketNo}>
                   <td>{v.ticketNo}</td>
+                  <td>{v.violationCode || "—"}</td>
                   <td>{v.violation}</td>
                   <td>{v.violationDate}</td>
                   <td>{v.driverName}</td>
                   <td>{v.classification}</td>
                   <td className="text-danger fw-semibold">
                     {money(v.totalAmount || 0)}
+                  </td>
+                  <td className="text-success fw-semibold">
+                    {money(v.payableAmount ?? v.totalAmount ?? 0)}
                   </td>
                   <td className="text-danger">{v.datePaid || "unavailable"}</td>
                   <td className="text-danger">{v.orNumber || "—"}</td>
@@ -804,7 +1061,7 @@ function TaskSection({
 
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center text-muted py-4">
+                  <td colSpan={11} className="text-center text-muted py-4">
                     No records.
                   </td>
                 </tr>

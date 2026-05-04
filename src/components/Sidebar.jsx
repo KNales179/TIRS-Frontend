@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { logout } from "../data/auth";
+import { logout, getUser } from "../data/auth";
 import tfroSeal from "../assets/tfro-seal.png";
 
 const linkClass = ({ isActive }, collapsed = false) =>
@@ -12,12 +12,34 @@ const linkClass = ({ isActive }, collapsed = false) =>
   }`;
 
 function MenuLinks({ onLinkClick, collapsed = false }) {
+  const user = getUser();
+
   const items = [
-    { to: "/dashboard", icon: "bi-speedometer2", label: "Dashboard" },
-    { to: "/profiles", icon: "bi-person", label: "Profiles" },
-    { to: "/violations", icon: "bi-exclamation-triangle", label: "Violations" },
-    { to: "/settings", icon: "bi-gear", label: "Settings" },
-  ];
+    {
+      to: "/dashboard",
+      icon: "bi-speedometer2",
+      label: "Dashboard",
+      roles: ["Admin", "Staff", "Enforcer"],
+    },
+    {
+      to: "/profiles",
+      icon: "bi-person",
+      label: "Profiles",
+      roles: ["Admin", "Staff"],
+    },
+    {
+      to: "/violations",
+      icon: "bi-exclamation-triangle",
+      label: "Violations",
+      roles: ["Admin", "Staff", "Enforcer"],
+    },
+    {
+      to: "/settings",
+      icon: "bi-gear",
+      label: "Settings",
+      roles: ["Admin"],
+    },
+  ].filter((item) => item.roles.includes(user?.role));
 
   return (
     <div className="nav nav-pills flex-column gap-2">
@@ -109,8 +131,9 @@ function BrandHeader({ collapsed, onToggle }) {
     </div>
   );
 }
-
+const user = getUser();
 function UserFooter({ onLogout, collapsed }) {
+  const user = getUser();
   return (
     <div className="p-3 border-top bg-white">
       {collapsed ? (
@@ -143,8 +166,8 @@ function UserFooter({ onLogout, collapsed }) {
             </div>
 
             <div className="lh-sm">
-              <div className="fw-semibold">User Name</div>
-              <div className="text-muted small">Admin</div>
+            <div className="fw-semibold">{user?.name || "Unknown User"}</div>
+            <div className="text-muted small">{user?.role || "User"}</div>
             </div>
           </div>
 
