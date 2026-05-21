@@ -1,8 +1,5 @@
 import { useMemo, useState } from "react";
-import { violations as seed } from "../data/violationsMock";
-import { violationsMaster } from "../data/violationsMaster";
-import ViolationFormModal from "../components/violations/ViolationFormModal";
-import ViolationViewModal from "../components/violations/ViolationViewModal";
+import { useTFROData } from "../context/TFRODataContext";
 
 function money(n) {
   return new Intl.NumberFormat("en-PH", {
@@ -27,99 +24,6 @@ function formatDateInput(value) {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
-function computePayableAmount(totalAmount, discountType, discountValue) {
-  const baseAmount = Number(totalAmount || 0);
-  const discount = Number(discountValue || 0);
-
-  if (discountType === "Fixed") {
-    return Math.max(baseAmount - discount, 0);
-  }
-
-  if (discountType === "Percent") {
-    return Math.max(baseAmount - (baseAmount * discount) / 100, 0);
-  }
-
-  return baseAmount;
-}
-
-function openPrintWindow(title, htmlBody) {
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) return;
-
-  w.document.open();
-  w.document.write(`
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <title>${title}</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            padding: 24px;
-            color: #111;
-          }
-          h1, h2, h3, p {
-            margin: 0;
-          }
-          .header {
-            margin-bottom: 20px;
-            border-bottom: 2px solid #111;
-            padding-bottom: 12px;
-          }
-          .muted {
-            color: #666;
-            font-size: 12px;
-          }
-          .card {
-            border: 1px solid #ddd;
-            border-radius: 12px;
-            padding: 18px;
-          }
-          .grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px 24px;
-          }
-          .item {
-            margin-bottom: 10px;
-          }
-          .label {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 4px;
-          }
-          .value {
-            font-size: 14px;
-            font-weight: 600;
-          }
-          .full {
-            grid-column: 1 / -1;
-          }
-          @media print {
-            body {
-              padding: 0;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        ${htmlBody}
-        <script>
-          window.onload = function() {
-            window.print();
-            window.onafterprint = function() {
-              window.close();
-            };
-          };
-        </script>
-      </body>
-    </html>
-  `);
-  w.document.close();
-}
-
 function getEmptyViolationForm() {
   return {
     ticketNo: "",
@@ -130,12 +34,11 @@ function getEmptyViolationForm() {
     violationDate: "",
     driverName: "",
     classification: "Colorum",
-    totalAmount: "",
-    discountType: "None",
-    discountValue: "",
+    officialPenalty: "",
+    declaredPenalty: "",
+    discount: "",
     payableAmount: "",
-    discountReason: "",
-    discountApprovedBy: "",
+    location: "",
     datePaid: "",
     orNumber: "",
     enforcers: [""],
@@ -145,6 +48,13 @@ function getEmptyViolationForm() {
 }
 
 export default function Violations() {
+  const {
+    violations: data,
+    setViolations: setData,
+    violationsMaster,
+    addViolation,
+  } = useTFROData();
+
   const [mode, setMode] = useState("Task");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -152,7 +62,6 @@ export default function Violations() {
   const [violationFilter, setViolationFilter] = useState("All");
   const [violationDateFilter, setViolationDateFilter] = useState("");
   const [classificationFilter, setClassificationFilter] = useState("All");
-  const [data, setData] = useState(seed);
 
   const [cols, setCols] = useState({
     ticketNo: true,
@@ -161,8 +70,9 @@ export default function Violations() {
     violationDate: true,
     driverName: true,
     classification: true,
-    totalAmount: true,
-    payableAmount: true,
+    officialPenalty: true,
+    declaredPenalty: true,
+    discount: true,
     datePaid: true,
     orNumber: true,
     enforcers: true,
@@ -174,7 +84,6 @@ export default function Violations() {
   const [formMode, setFormMode] = useState("add");
   const [selectedRow, setSelectedRow] = useState(null);
   const [formData, setFormData] = useState(getEmptyViolationForm());
-
   const [viewRow, setViewRow] = useState(null);
 
   const violationCodeOptions = useMemo(() => {
@@ -182,14 +91,14 @@ export default function Violations() {
     const existingCodes = data.map((item) => item.violationCode).filter(Boolean);
 
     return ["All", ...new Set([...masterCodes, ...existingCodes])];
-  }, [data]);
+  }, [data, violationsMaster]);
 
   const violationOptions = useMemo(() => {
     const masterNames = violationsMaster.map((item) => item.name);
     const existingNames = data.map((item) => item.violation).filter(Boolean);
 
     return ["All", ...new Set([...masterNames, ...existingNames])];
-  }, [data]);
+  }, [data, violationsMaster]);
 
   const classificationOptions = useMemo(() => {
     return ["All", ...new Set(data.map((v) => v.classification).filter(Boolean))];
@@ -210,8 +119,7 @@ export default function Violations() {
             v.classification,
             v.orNumber,
             v.enforcers,
-            v.discountReason,
-            v.discountApprovedBy,
+            v.location,
           ]
             .join(" ")
             .toLowerCase()
@@ -274,19 +182,20 @@ export default function Violations() {
   }
 
   function handleEdit(v) {
+    const officialPenalty =
+      v.officialPenalty ?? v.penaltyAmount ?? v.totalAmount ?? 0;
+    const declaredPenalty =
+      v.declaredPenalty ?? v.payableAmount ?? v.totalAmount ?? 0;
+
     setFormMode("edit");
     setSelectedRow(v);
     setFormData({
       ...getEmptyViolationForm(),
       ...v,
-      totalAmount: v.totalAmount || "",
-      discountType: v.discountType || "None",
-      discountValue: v.discountValue || "",
-      payableAmount:
-        v.payableAmount ??
-        computePayableAmount(v.totalAmount, v.discountType, v.discountValue),
-      discountReason: v.discountReason || "",
-      discountApprovedBy: v.discountApprovedBy || "",
+      officialPenalty,
+      declaredPenalty,
+      discount: Math.max(Number(officialPenalty) - Number(declaredPenalty), 0),
+      payableAmount: declaredPenalty,
       commissionRate: v.commissionRate || 0.2,
       datePaid: v.datePaid || "",
       orNumber: v.orNumber || "",
@@ -314,9 +223,7 @@ export default function Violations() {
       !formData.violationDate.trim() ||
       !formData.driverName.trim()
     ) {
-      alert(
-        "Please fill in Ticket No., Violation, Violation Date, and Driver’s Name."
-      );
+      alert("Please fill in Ticket No., Violation, Violation Date, and Driver’s Name.");
       return;
     }
 
@@ -325,20 +232,9 @@ export default function Violations() {
       return;
     }
 
-    if (
-      formData.discountType !== "None" &&
-      (!formData.discountReason || !formData.discountApprovedBy)
-    ) {
-      alert("Please fill in Discount Reason and Approved By.");
-      return;
-    }
-
-    const baseAmount = Number(formData.totalAmount || 0);
-    const payableAmount = computePayableAmount(
-      baseAmount,
-      formData.discountType,
-      formData.discountValue
-    );
+    const officialPenalty = Number(formData.officialPenalty || 0);
+    const declaredPenalty = Number(formData.declaredPenalty || 0);
+    const discount = Math.max(officialPenalty - declaredPenalty, 0);
 
     const payload = {
       ...formData,
@@ -346,9 +242,12 @@ export default function Violations() {
         .map((name) => name.trim())
         .filter(Boolean)
         .join(", "),
-      totalAmount: baseAmount,
-      discountValue: Number(formData.discountValue || 0),
-      payableAmount,
+      officialPenalty,
+      declaredPenalty,
+      discount,
+      payableAmount: declaredPenalty,
+      penaltyAmount: officialPenalty,
+      totalAmount: officialPenalty,
       commissionRate: Number(formData.commissionRate || 0),
       offenseLevel: Number(formData.offenseLevel || 0),
       datePaid: formData.datePaid || null,
@@ -366,7 +265,7 @@ export default function Violations() {
         return;
       }
 
-      setData((prev) => [payload, ...prev]);
+      addViolation(payload);
     } else {
       setData((prev) =>
         prev.map((item) =>
@@ -382,120 +281,8 @@ export default function Violations() {
     handleCloseFormModal();
   }
 
-  function handleView(v) {
-    setViewRow(v);
-  }
-
-  function handleCloseView() {
-    setViewRow(null);
-  }
-
   function handlePrint(v) {
-    const commission = (v.payableAmount || v.totalAmount || 0) * (v.commissionRate || 0);
-    const status = deriveStatus(v);
-
-    openPrintWindow(
-      `Violation ${v.ticketNo}`,
-      `
-        <div class="header">
-          <h1>Violation Details</h1>
-          <p class="muted">Ticket No: ${v.ticketNo}</p>
-        </div>
-
-        <div class="card">
-          <div class="grid">
-            <div class="item">
-              <div class="label">Ticket No.</div>
-              <div class="value">${v.ticketNo || "—"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Violation Code</div>
-              <div class="value">${v.violationCode || "—"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Violation</div>
-              <div class="value">${v.violation || "—"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Violation Date</div>
-              <div class="value">${v.violationDate || "—"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Driver’s Name</div>
-              <div class="value">${v.driverName || "—"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Classification</div>
-              <div class="value">${v.classification || "—"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Official Penalty</div>
-              <div class="value">${money(v.totalAmount)}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Payable Amount</div>
-              <div class="value">${money(v.payableAmount ?? v.totalAmount)}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Discount Type</div>
-              <div class="value">${v.discountType || "None"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Discount Value</div>
-              <div class="value">${
-                v.discountType === "Percent"
-                  ? `${Number(v.discountValue || 0)}%`
-                  : money(v.discountValue || 0)
-              }</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Discount Reason</div>
-              <div class="value">${v.discountReason || "—"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Approved By</div>
-              <div class="value">${v.discountApprovedBy || "—"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Date Paid</div>
-              <div class="value">${v.datePaid || "unavailable"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">OR Number</div>
-              <div class="value">${v.orNumber || "—"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Enforcer(s)</div>
-              <div class="value">${v.enforcers || "—"}</div>
-            </div>
-
-            <div class="item">
-              <div class="label">Enforcer’s Commission</div>
-              <div class="value">${money(commission)}</div>
-            </div>
-
-            <div class="item full">
-              <div class="label">Status</div>
-              <div class="value">${status}</div>
-            </div>
-          </div>
-        </div>
-      `
-    );
+    window.print();
   }
 
   function handleDelete(v) {
@@ -542,7 +329,7 @@ export default function Violations() {
             onClick={handleAddViolation}
             type="button"
           >
-            + Add Violators
+            + Add Violator
           </button>
         </div>
       </div>
@@ -575,27 +362,29 @@ export default function Violations() {
             count={grouped["New"].length}
             rows={grouped["New"]}
             onSeeMore={() => jumpToStatus("New")}
-            onView={handleView}
+            onView={setViewRow}
             onPrint={handlePrint}
             onEdit={handleEdit}
             onDelete={handleDelete}
           />
+
           <TaskSection
             title="On Process"
             count={grouped["On Process"].length}
             rows={grouped["On Process"]}
             onSeeMore={() => jumpToStatus("On Process")}
-            onView={handleView}
+            onView={setViewRow}
             onPrint={handlePrint}
             onEdit={handleEdit}
             onDelete={handleDelete}
           />
+
           <TaskSection
             title="Done"
             count={grouped["Done"].length}
             rows={grouped["Done"]}
             onSeeMore={() => jumpToStatus("Done")}
-            onView={handleView}
+            onView={setViewRow}
             onPrint={handlePrint}
             onEdit={handleEdit}
             onDelete={handleDelete}
@@ -608,52 +397,29 @@ export default function Violations() {
               <div className="card-body">
                 <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                   <div className="d-flex flex-wrap align-items-end gap-2">
-                    <div>
-                      <span className="text-muted small d-block mb-1">Status</span>
-                      <select
-                        className="form-select form-select-sm"
-                        style={{ width: 150 }}
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                      >
-                        <option value="All">All</option>
-                        <option value="New">New</option>
-                        <option value="On Process">On Process</option>
-                        <option value="Done">Done</option>
-                      </select>
-                    </div>
+                    <FilterSelect
+                      label="Status"
+                      value={statusFilter}
+                      onChange={setStatusFilter}
+                      options={["All", "New", "On Process", "Done"]}
+                      width={150}
+                    />
 
-                    <div>
-                      <span className="text-muted small d-block mb-1">Code</span>
-                      <select
-                        className="form-select form-select-sm"
-                        style={{ width: 130 }}
-                        value={violationCodeFilter}
-                        onChange={(e) => setViolationCodeFilter(e.target.value)}
-                      >
-                        {violationCodeOptions.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <FilterSelect
+                      label="Code"
+                      value={violationCodeFilter}
+                      onChange={setViolationCodeFilter}
+                      options={violationCodeOptions}
+                      width={130}
+                    />
 
-                    <div>
-                      <span className="text-muted small d-block mb-1">Violation</span>
-                      <select
-                        className="form-select form-select-sm"
-                        style={{ width: 240 }}
-                        value={violationFilter}
-                        onChange={(e) => setViolationFilter(e.target.value)}
-                      >
-                        {violationOptions.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <FilterSelect
+                      label="Violation"
+                      value={violationFilter}
+                      onChange={setViolationFilter}
+                      options={violationOptions}
+                      width={240}
+                    />
 
                     <div>
                       <span className="text-muted small d-block mb-1">
@@ -670,23 +436,13 @@ export default function Violations() {
                       />
                     </div>
 
-                    <div>
-                      <span className="text-muted small d-block mb-1">
-                        Classification
-                      </span>
-                      <select
-                        className="form-select form-select-sm"
-                        style={{ width: 160 }}
-                        value={classificationFilter}
-                        onChange={(e) => setClassificationFilter(e.target.value)}
-                      >
-                        {classificationOptions.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <FilterSelect
+                      label="Classification"
+                      value={classificationFilter}
+                      onChange={setClassificationFilter}
+                      options={classificationOptions}
+                      width={160}
+                    />
 
                     {(statusFilter !== "All" ||
                       violationCodeFilter !== "All" ||
@@ -714,193 +470,26 @@ export default function Violations() {
                     </button>
 
                     <div className="dropdown-menu p-3" style={{ minWidth: 250 }}>
-                      <FilterCheck
-                        label="Ticket Number"
-                        checked={cols.ticketNo}
-                        onChange={(v) => setCols((c) => ({ ...c, ticketNo: v }))}
-                      />
-                      <FilterCheck
-                        label="Violation Code"
-                        checked={cols.violationCode}
-                        onChange={(v) =>
-                          setCols((c) => ({ ...c, violationCode: v }))
-                        }
-                      />
-                      <FilterCheck
-                        label="Violation"
-                        checked={cols.violation}
-                        onChange={(v) => setCols((c) => ({ ...c, violation: v }))}
-                      />
-                      <FilterCheck
-                        label="Violation Date"
-                        checked={cols.violationDate}
-                        onChange={(v) =>
-                          setCols((c) => ({ ...c, violationDate: v }))
-                        }
-                      />
-                      <FilterCheck
-                        label="Driver’s Name"
-                        checked={cols.driverName}
-                        onChange={(v) => setCols((c) => ({ ...c, driverName: v }))}
-                      />
-                      <FilterCheck
-                        label="Classification"
-                        checked={cols.classification}
-                        onChange={(v) =>
-                          setCols((c) => ({ ...c, classification: v }))
-                        }
-                      />
-                      <FilterCheck
-                        label="Official Penalty"
-                        checked={cols.totalAmount}
-                        onChange={(v) => setCols((c) => ({ ...c, totalAmount: v }))}
-                      />
-                      <FilterCheck
-                        label="Payable Amount"
-                        checked={cols.payableAmount}
-                        onChange={(v) =>
-                          setCols((c) => ({ ...c, payableAmount: v }))
-                        }
-                      />
-                      <FilterCheck
-                        label="Date Paid"
-                        checked={cols.datePaid}
-                        onChange={(v) => setCols((c) => ({ ...c, datePaid: v }))}
-                      />
-                      <FilterCheck
-                        label="OR Number"
-                        checked={cols.orNumber}
-                        onChange={(v) => setCols((c) => ({ ...c, orNumber: v }))}
-                      />
-                      <FilterCheck
-                        label="Enforcer(s)"
-                        checked={cols.enforcers}
-                        onChange={(v) => setCols((c) => ({ ...c, enforcers: v }))}
-                      />
-                      <FilterCheck
-                        label="Commission"
-                        checked={cols.commission}
-                        onChange={(v) => setCols((c) => ({ ...c, commission: v }))}
-                      />
-                      <FilterCheck
-                        label="Status"
-                        checked={cols.status}
-                        onChange={(v) => setCols((c) => ({ ...c, status: v }))}
-                      />
+                      {Object.keys(cols).map((key) => (
+                        <FilterCheck
+                          key={key}
+                          label={key}
+                          checked={cols[key]}
+                          onChange={(v) => setCols((c) => ({ ...c, [key]: v }))}
+                        />
+                      ))}
                     </div>
                   </div>
                 </div>
 
-                <div className="table-responsive">
-                  <table className="tfro-table">
-                    <thead>
-                      <tr className="text-muted small">
-                        {cols.ticketNo && <th>Ticket No.</th>}
-                        {cols.violationCode && <th>Code</th>}
-                        {cols.violation && <th>Violation</th>}
-                        {cols.violationDate && <th>Violation Date</th>}
-                        {cols.driverName && <th>Driver’s Name</th>}
-                        {cols.classification && <th>Classification</th>}
-                        {cols.totalAmount && <th>Official Penalty</th>}
-                        {cols.payableAmount && <th>Payable Amount</th>}
-                        {cols.datePaid && <th>Date Paid</th>}
-                        {cols.orNumber && <th>OR number</th>}
-                        {cols.enforcers && <th>Enforcer(s)</th>}
-                        {cols.commission && <th>Enforcer’s Commission</th>}
-                        {cols.status && <th>Status</th>}
-                        <th className="text-end">Actions</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {rows.map((v) => {
-                        const commission =
-                          (v.payableAmount ?? v.totalAmount ?? 0) *
-                          (v.commissionRate || 0);
-                        const status = deriveStatus(v);
-
-                        return (
-                          <tr key={v.ticketNo}>
-                            {cols.ticketNo && <td>{v.ticketNo}</td>}
-                            {cols.violationCode && <td>{v.violationCode || "—"}</td>}
-                            {cols.violation && <td>{v.violation}</td>}
-                            {cols.violationDate && <td>{v.violationDate}</td>}
-                            {cols.driverName && <td>{v.driverName}</td>}
-                            {cols.classification && <td>{v.classification}</td>}
-                            {cols.totalAmount && (
-                              <td className="text-danger fw-semibold">
-                                {money(v.totalAmount || 0)}
-                              </td>
-                            )}
-                            {cols.payableAmount && (
-                              <td className="text-success fw-semibold">
-                                {money(v.payableAmount ?? v.totalAmount ?? 0)}
-                              </td>
-                            )}
-                            {cols.datePaid && (
-                              <td className="text-danger">
-                                {v.datePaid || "unavailable"}
-                              </td>
-                            )}
-                            {cols.orNumber && (
-                              <td className="text-danger">{v.orNumber || "—"}</td>
-                            )}
-                            {cols.enforcers && <td>{v.enforcers}</td>}
-                            {cols.commission && <td>{money(commission)}</td>}
-                            {cols.status && (
-                              <td>
-                                <StatusBadge status={status} />
-                              </td>
-                            )}
-
-                            <td className="text-end">
-                              <button
-                                className="btn btn-sm btn-light rounded-circle me-1"
-                                onClick={() => handleView(v)}
-                                title="View"
-                                type="button"
-                              >
-                                <i className="bi bi-eye" />
-                              </button>
-                              <button
-                                className="btn btn-sm btn-light rounded-circle me-1"
-                                onClick={() => handlePrint(v)}
-                                title="Print"
-                                type="button"
-                              >
-                                <i className="bi bi-printer" />
-                              </button>
-                              <button
-                                className="btn btn-sm btn-light rounded-circle me-1"
-                                onClick={() => handleEdit(v)}
-                                title="Edit"
-                                type="button"
-                              >
-                                <i className="bi bi-pencil-square" />
-                              </button>
-                              <button
-                                className="btn btn-sm btn-light rounded-circle"
-                                onClick={() => handleDelete(v)}
-                                title="Delete"
-                                type="button"
-                              >
-                                <i className="bi bi-trash" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-
-                      {rows.length === 0 && (
-                        <tr>
-                          <td colSpan={20} className="text-center text-muted py-5">
-                            No results.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <ViolationTable
+                  rows={rows}
+                  cols={cols}
+                  onView={setViewRow}
+                  onPrint={handlePrint}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
               </div>
             </div>
           </div>
@@ -912,6 +501,7 @@ export default function Violations() {
         mode={formMode}
         formData={formData}
         setFormData={setFormData}
+        violationsMaster={violationsMaster}
         onClose={handleCloseFormModal}
         onSave={handleSaveForm}
       />
@@ -919,9 +509,514 @@ export default function Violations() {
       <ViolationViewModal
         show={!!viewRow}
         row={viewRow}
-        onClose={handleCloseView}
-        onPrint={handlePrint}
+        onClose={() => setViewRow(null)}
       />
+    </div>
+  );
+}
+
+function FilterSelect({ label, value, onChange, options, width }) {
+  return (
+    <div>
+      <span className="text-muted small d-block mb-1">{label}</span>
+      <select
+        className="form-select form-select-sm"
+        style={{ width }}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function ViolationTable({ rows, cols, onView, onPrint, onEdit, onDelete }) {
+  return (
+    <div className="table-responsive">
+      <table className="tfro-table">
+        <thead>
+          <tr className="text-muted small">
+            {cols.ticketNo && <th>Ticket No.</th>}
+            {cols.violationCode && <th>Code</th>}
+            {cols.violation && <th>Violation</th>}
+            {cols.violationDate && <th>Violation Date</th>}
+            {cols.driverName && <th>Driver’s Name</th>}
+            {cols.classification && <th>Classification</th>}
+            {cols.officialPenalty && <th>Official Penalty</th>}
+            {cols.declaredPenalty && <th>Declared Penalty</th>}
+            {cols.discount && <th>Auto Discount</th>}
+            {cols.datePaid && <th>Date Paid</th>}
+            {cols.orNumber && <th>OR Number</th>}
+            {cols.enforcers && <th>Enforcer(s)</th>}
+            {cols.commission && <th>Commission</th>}
+            {cols.status && <th>Status</th>}
+            <th className="text-end">Actions</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {rows.map((v) => {
+            const officialPenalty = v.officialPenalty ?? v.penaltyAmount ?? v.totalAmount ?? 0;
+            const declaredPenalty = v.declaredPenalty ?? v.payableAmount ?? v.totalAmount ?? 0;
+            const discount = Math.max(Number(officialPenalty) - Number(declaredPenalty), 0);
+            const commission = Number(declaredPenalty) * Number(v.commissionRate || 0);
+            const status = deriveStatus(v);
+
+            return (
+              <tr key={v.ticketNo}>
+                {cols.ticketNo && <td>{v.ticketNo}</td>}
+                {cols.violationCode && <td>{v.violationCode || "—"}</td>}
+                {cols.violation && <td>{v.violation}</td>}
+                {cols.violationDate && <td>{v.violationDate}</td>}
+                {cols.driverName && <td>{v.driverName}</td>}
+                {cols.classification && <td>{v.classification}</td>}
+                {cols.officialPenalty && (
+                  <td className="text-danger fw-semibold">{money(officialPenalty)}</td>
+                )}
+                {cols.declaredPenalty && (
+                  <td className="text-success fw-semibold">{money(declaredPenalty)}</td>
+                )}
+                {cols.discount && <td>{money(discount)}</td>}
+                {cols.datePaid && (
+                  <td className="text-danger">{v.datePaid || "unavailable"}</td>
+                )}
+                {cols.orNumber && (
+                  <td className="text-danger">{v.orNumber || "—"}</td>
+                )}
+                {cols.enforcers && <td>{v.enforcers}</td>}
+                {cols.commission && <td>{money(commission)}</td>}
+                {cols.status && (
+                  <td>
+                    <StatusBadge status={status} />
+                  </td>
+                )}
+
+                <td className="text-end">
+                  <ActionButtons
+                    row={v}
+                    onView={onView}
+                    onPrint={onPrint}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
+                </td>
+              </tr>
+            );
+          })}
+
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={20} className="text-center text-muted py-5">
+                No results.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TaskSection({ title, count, rows, onSeeMore, onView, onPrint, onEdit, onDelete }) {
+  return (
+    <div className="card rounded-4 shadow-sm border-0">
+      <div className="card-body">
+        <div className="d-flex align-items-center justify-content-between mb-3">
+          <div className="d-flex align-items-center gap-2">
+            <div className="fw-bold">{title}</div>
+            <span className="badge bg-danger-subtle text-danger-emphasis">
+              {count}
+            </span>
+          </div>
+
+          <a
+            href="#!"
+            onClick={(e) => {
+              e.preventDefault();
+              onSeeMore?.();
+            }}
+          >
+            See More
+          </a>
+        </div>
+
+        <ViolationTable
+          rows={rows.slice(0, 5)}
+          cols={{
+            ticketNo: true,
+            violationCode: true,
+            violation: true,
+            violationDate: true,
+            driverName: true,
+            classification: true,
+            officialPenalty: true,
+            declaredPenalty: true,
+            discount: true,
+            datePaid: true,
+            orNumber: true,
+            enforcers: false,
+            commission: false,
+            status: false,
+          }}
+          onView={onView}
+          onPrint={onPrint}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ViolationFormModal({
+  show,
+  mode,
+  formData,
+  setFormData,
+  violationsMaster,
+  onClose,
+  onSave,
+}) {
+  if (!show) return null;
+
+  const officialPenalty = Number(formData.officialPenalty || 0);
+  const declaredPenalty = Number(formData.declaredPenalty || 0);
+  const discount = Math.max(officialPenalty - declaredPenalty, 0);
+
+  function setField(key, value) {
+    setFormData((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
+  function handleViolationChange(code) {
+    const selected = violationsMaster.find(
+      (item) => String(item.code) === String(code)
+    );
+
+    setFormData((prev) => ({
+      ...prev,
+      violationCode: selected?.code || "",
+      violation: selected?.name || "",
+      violationGroup: selected?.group || "",
+      offenseLevel: selected?.offenseLevel || "",
+      officialPenalty: selected?.penalty || "",
+      declaredPenalty: selected?.penalty || "",
+      discount: 0,
+      payableAmount: selected?.penalty || "",
+    }));
+  }
+
+  function setEnforcer(index, value) {
+    setFormData((prev) => {
+      const next = [...prev.enforcers];
+      next[index] = value;
+      return { ...prev, enforcers: next };
+    });
+  }
+
+  function addEnforcer() {
+    setFormData((prev) => ({
+      ...prev,
+      enforcers: [...prev.enforcers, ""],
+    }));
+  }
+
+  function removeEnforcer(index) {
+    setFormData((prev) => ({
+      ...prev,
+      enforcers: prev.enforcers.filter((_, i) => i !== index),
+    }));
+  }
+
+  return (
+    <>
+      <div className="modal fade show d-block" tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered modal-xl">
+          <div className="modal-content border-0 rounded-4 shadow">
+            <div className="modal-header border-0 pb-0">
+              <div>
+                <h5 className="modal-title fw-bold">
+                  {mode === "add" ? "Add Violation" : "Edit Violation"}
+                </h5>
+                <div className="text-muted small">
+                  Official penalty is auto-filled from violation master list.
+                </div>
+              </div>
+
+              <button type="button" className="btn-close" onClick={onClose} />
+            </div>
+
+            <div className="modal-body">
+              <div className="row g-3">
+                <FormInput
+                  label="Ticket No."
+                  value={formData.ticketNo}
+                  onChange={(v) => setField("ticketNo", v)}
+                />
+
+                <div className="col-md-6">
+                  <label className="form-label small text-muted">Violation</label>
+                  <select
+                    className="form-select rounded-4"
+                    value={formData.violationCode}
+                    onChange={(e) => handleViolationChange(e.target.value)}
+                  >
+                    <option value="">Select violation</option>
+                    {violationsMaster.map((item) => (
+                      <option key={item.code} value={item.code}>
+                        {item.code} - {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <FormInput
+                  label="Violation Date"
+                  placeholder="MM/DD/YYYY"
+                  value={formData.violationDate}
+                  onChange={(v) => setField("violationDate", formatDateInput(v))}
+                />
+
+                <FormInput
+                  label="Driver’s Name"
+                  value={formData.driverName}
+                  onChange={(v) => setField("driverName", v)}
+                />
+
+                <div className="col-md-6">
+                  <label className="form-label small text-muted">Classification</label>
+                  <select
+                    className="form-select rounded-4"
+                    value={formData.classification}
+                    onChange={(e) => setField("classification", e.target.value)}
+                  >
+                    <option value="Colorum">Colorum</option>
+                    <option value="Registered">Registered</option>
+                    <option value="Temporary">Temporary</option>
+                    <option value="Special Franchise">Special Franchise</option>
+                  </select>
+                </div>
+
+                <FormInput
+                  label="Location"
+                  value={formData.location}
+                  onChange={(v) => setField("location", v)}
+                />
+
+                <FormInput
+                  label="Official Penalty"
+                  type="number"
+                  value={formData.officialPenalty}
+                  onChange={(v) => setField("officialPenalty", v)}
+                  disabled
+                />
+
+                <FormInput
+                  label="Declared Penalty"
+                  type="number"
+                  value={formData.declaredPenalty}
+                  onChange={(v) => {
+                    const declared = Number(v || 0);
+                    const official = Number(formData.officialPenalty || 0);
+                    setFormData((prev) => ({
+                      ...prev,
+                      declaredPenalty: v,
+                      discount: Math.max(official - declared, 0),
+                      payableAmount: declared,
+                    }));
+                  }}
+                />
+
+                <FormInput
+                  label="Auto Discount"
+                  value={money(discount)}
+                  onChange={() => {}}
+                  disabled
+                />
+
+                <FormInput
+                  label="Payable Amount"
+                  value={money(declaredPenalty)}
+                  onChange={() => {}}
+                  disabled
+                />
+
+                <FormInput
+                  label="Date Paid"
+                  placeholder="MM/DD/YYYY"
+                  value={formData.datePaid || ""}
+                  onChange={(v) => setField("datePaid", formatDateInput(v))}
+                />
+
+                <FormInput
+                  label="OR Number"
+                  value={formData.orNumber || ""}
+                  onChange={(v) => setField("orNumber", v)}
+                />
+
+                <div className="col-md-6">
+                  <label className="form-label small text-muted">Status</label>
+                  <select
+                    className="form-select rounded-4"
+                    value={formData.status}
+                    onChange={(e) => setField("status", e.target.value)}
+                  >
+                    <option value="New">New</option>
+                    <option value="On Process">On Process</option>
+                    <option value="Done">Done</option>
+                  </select>
+                </div>
+
+                <div className="col-12">
+                  <label className="form-label small text-muted">Enforcer(s)</label>
+
+                  {formData.enforcers.map((name, index) => (
+                    <div className="d-flex gap-2 mb-2" key={index}>
+                      <input
+                        className="form-control rounded-4"
+                        value={name}
+                        placeholder="Enforcer name"
+                        onChange={(e) => setEnforcer(index, e.target.value)}
+                      />
+
+                      {formData.enforcers.length > 1 && (
+                        <button
+                          className="btn btn-outline-danger rounded-4"
+                          type="button"
+                          onClick={() => removeEnforcer(index)}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  <button
+                    className="btn btn-sm btn-outline-primary rounded-4"
+                    type="button"
+                    onClick={addEnforcer}
+                  >
+                    + Add Enforcer
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer border-0 pt-0">
+              <button
+                type="button"
+                className="btn btn-outline-secondary rounded-4 px-4"
+                onClick={onClose}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary rounded-4 px-4"
+                onClick={onSave}
+              >
+                Save Violation
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+function ViolationViewModal({ show, row, onClose }) {
+  if (!show || !row) return null;
+
+  const officialPenalty = row.officialPenalty ?? row.penaltyAmount ?? row.totalAmount ?? 0;
+  const declaredPenalty = row.declaredPenalty ?? row.payableAmount ?? row.totalAmount ?? 0;
+  const discount = Math.max(Number(officialPenalty) - Number(declaredPenalty), 0);
+
+  return (
+    <>
+      <div className="modal fade show d-block" tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered modal-lg">
+          <div className="modal-content border-0 rounded-4 shadow">
+            <div className="modal-header border-0">
+              <h5 className="modal-title fw-bold">Violation Details</h5>
+              <button type="button" className="btn-close" onClick={onClose} />
+            </div>
+
+            <div className="modal-body">
+              <div className="row g-3">
+                <ViewItem label="Ticket No." value={row.ticketNo} />
+                <ViewItem label="Violation Code" value={row.violationCode} />
+                <ViewItem label="Violation" value={row.violation} col="col-12" />
+                <ViewItem label="Violation Date" value={row.violationDate} />
+                <ViewItem label="Driver’s Name" value={row.driverName} />
+                <ViewItem label="Classification" value={row.classification} />
+                <ViewItem label="Location" value={row.location} />
+                <ViewItem label="Official Penalty" value={money(officialPenalty)} />
+                <ViewItem label="Declared Penalty" value={money(declaredPenalty)} />
+                <ViewItem label="Auto Discount" value={money(discount)} />
+                <ViewItem label="Date Paid" value={row.datePaid || "unavailable"} />
+                <ViewItem label="OR Number" value={row.orNumber || "—"} />
+                <ViewItem label="Enforcer(s)" value={row.enforcers || "—"} col="col-12" />
+                <ViewItem label="Status" value={deriveStatus(row)} />
+              </div>
+            </div>
+
+            <div className="modal-footer border-0">
+              <button
+                className="btn btn-primary rounded-4 px-4"
+                type="button"
+                onClick={onClose}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+function FormInput({
+  label,
+  value,
+  onChange,
+  placeholder = "",
+  type = "text",
+  disabled = false,
+}) {
+  return (
+    <div className="col-md-6">
+      <label className="form-label small text-muted">{label}</label>
+      <input
+        type={type}
+        className="form-control rounded-4"
+        placeholder={placeholder}
+        value={value || ""}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+function ViewItem({ label, value, col = "col-md-6" }) {
+  return (
+    <div className={col}>
+      <div className="small text-muted mb-1">{label}</div>
+      <div className="bg-light rounded-4 px-3 py-3">{value || "—"}</div>
     </div>
   );
 }
@@ -952,124 +1047,51 @@ function FilterCheck({ label, checked, onChange }) {
         onChange={(e) => onChange(e.target.checked)}
         id={safeId}
       />
-      <label className="form-check-label" htmlFor={safeId}>
-        {label}
+      <label className="form-check-label text-capitalize" htmlFor={safeId}>
+        {label.replace(/([A-Z])/g, " $1")}
       </label>
     </div>
   );
 }
 
-function TaskSection({
-  title,
-  count,
-  rows,
-  onSeeMore,
-  onView,
-  onPrint,
-  onEdit,
-  onDelete,
-}) {
+function ActionButtons({ row, onView, onPrint, onEdit, onDelete }) {
   return (
-    <div className="card rounded-4 shadow-sm border-0">
-      <div className="card-body">
-        <div className="d-flex align-items-center justify-content-between mb-3">
-          <div className="d-flex align-items-center gap-2">
-            <div className="fw-bold">{title}</div>
-            <span className="badge bg-danger-subtle text-danger-emphasis">
-              {count}
-            </span>
-          </div>
+    <>
+      <button
+        className="btn btn-sm btn-light rounded-circle me-1"
+        onClick={() => onView?.(row)}
+        title="View"
+        type="button"
+      >
+        <i className="bi bi-eye" />
+      </button>
 
-          <a
-            href="#!"
-            onClick={(e) => {
-              e.preventDefault();
-              onSeeMore?.();
-            }}
-          >
-            See More
-          </a>
-        </div>
+      <button
+        className="btn btn-sm btn-light rounded-circle me-1"
+        onClick={() => onPrint?.(row)}
+        title="Print"
+        type="button"
+      >
+        <i className="bi bi-printer" />
+      </button>
 
-        <div className="table-responsive">
-          <table className="tfro-table">
-            <thead>
-              <tr>
-                <th>Ticket No.</th>
-                <th>Code</th>
-                <th>Violation</th>
-                <th>Violation Date</th>
-                <th>Driver’s Name</th>
-                <th>Classification</th>
-                <th>Official Penalty</th>
-                <th>Payable Amount</th>
-                <th>Date Paid</th>
-                <th>OR number</th>
-                <th className="text-end">Actions</th>
-              </tr>
-            </thead>
+      <button
+        className="btn btn-sm btn-light rounded-circle me-1"
+        onClick={() => onEdit?.(row)}
+        title="Edit"
+        type="button"
+      >
+        <i className="bi bi-pencil-square" />
+      </button>
 
-            <tbody>
-              {rows.slice(0, 5).map((v) => (
-                <tr key={v.ticketNo}>
-                  <td>{v.ticketNo}</td>
-                  <td>{v.violationCode || "—"}</td>
-                  <td>{v.violation}</td>
-                  <td>{v.violationDate}</td>
-                  <td>{v.driverName}</td>
-                  <td>{v.classification}</td>
-                  <td className="text-danger fw-semibold">
-                    {money(v.totalAmount || 0)}
-                  </td>
-                  <td className="text-success fw-semibold">
-                    {money(v.payableAmount ?? v.totalAmount ?? 0)}
-                  </td>
-                  <td className="text-danger">{v.datePaid || "unavailable"}</td>
-                  <td className="text-danger">{v.orNumber || "—"}</td>
-                  <td className="text-end">
-                    <button
-                      className="btn btn-sm btn-light rounded-circle me-1"
-                      onClick={() => onView?.(v)}
-                      type="button"
-                    >
-                      <i className="bi bi-eye" />
-                    </button>
-                    <button
-                      className="btn btn-sm btn-light rounded-circle me-1"
-                      onClick={() => onPrint?.(v)}
-                      type="button"
-                    >
-                      <i className="bi bi-printer" />
-                    </button>
-                    <button
-                      className="btn btn-sm btn-light rounded-circle me-1"
-                      onClick={() => onEdit?.(v)}
-                      type="button"
-                    >
-                      <i className="bi bi-pencil-square" />
-                    </button>
-                    <button
-                      className="btn btn-sm btn-light rounded-circle"
-                      onClick={() => onDelete?.(v)}
-                      type="button"
-                    >
-                      <i className="bi bi-trash" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={11} className="text-center text-muted py-4">
-                    No records.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+      <button
+        className="btn btn-sm btn-light rounded-circle"
+        onClick={() => onDelete?.(row)}
+        title="Delete"
+        type="button"
+      >
+        <i className="bi bi-trash" />
+      </button>
+    </>
   );
 }

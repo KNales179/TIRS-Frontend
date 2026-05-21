@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { driversMock as seedDrivers } from "../data/driversMock";
-import { enforcersMock as seedEnforcers } from "../data/enforcersMock";
 import DriverFormModal from "../components/DriverFormModal";
 import EnforcerFormModal from "../components/EnforcerFormModal";
+import { exportProfilesToExcel } from "../utils/exportExcel";
+import { useTFROData } from "../context/TFRODataContext";
 
 function Avatar({ name }) {
   const initials = (name || "?")
@@ -48,13 +48,8 @@ function normalizeDriverType(type) {
     return "SPECIAL FRANCHISE";
   }
 
-  if (t === "COLORUM") {
-    return "COLORUM";
-  }
-
-  if (t === "TEMPORARY") {
-    return "TEMPORARY";
-  }
+  if (t === "COLORUM") return "COLORUM";
+  if (t === "TEMPORARY") return "TEMPORARY";
 
   return t || "—";
 }
@@ -74,18 +69,85 @@ function TypeBadge({ type }) {
   return <span className={`badge rounded-pill ${badgeClass}`}>{normalized}</span>;
 }
 
+function ViolationBadge({ driver }) {
+  const violations = (driver.vehicles || []).flatMap((v) => v.violations || []);
+  const hasPending = violations.some((v) => {
+    const s = String(v.status || "").toLowerCase();
+    return !["done", "paid", "settled"].includes(s);
+  });
+
+  if (violations.length === 0) {
+    return (
+      <span className="badge rounded-pill bg-success-subtle text-success-emphasis">
+        No Violation
+      </span>
+    );
+  }
+
+  if (hasPending) {
+    return (
+      <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
+        Has Pending
+      </span>
+    );
+  }
+
+  return (
+    <span className="badge rounded-pill bg-danger-subtle text-danger-emphasis">
+      Has Violation
+    </span>
+  );
+}
+
 function makeId(prefix = "x") {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+}
+
+function getFranchiseForVehicle(driver, vehicleIndex) {
+  const franchises = driver.franchises || [];
+  return franchises.find((f) => Number(f.vehicleIndex) === Number(vehicleIndex)) || null;
+}
+
+function buildDriverTableRows(drivers) {
+  const tableRows = [];
+
+  drivers.forEach((driver) => {
+    const vehicles = driver.vehicles || [];
+
+    if (vehicles.length === 0) {
+      tableRows.push({
+        rowId: `${driver.id}-empty`,
+        driver,
+        vehicle: null,
+        vehicleIndex: -1,
+        franchise: null,
+      });
+      return;
+    }
+
+    vehicles.forEach((vehicle, index) => {
+      const franchise = getFranchiseForVehicle(driver, index);
+
+      tableRows.push({
+        rowId: `${driver.id}-${vehicle.plateNo || index}`,
+        driver,
+        vehicle,
+        vehicleIndex: index,
+        franchise,
+      });
+    });
+  });
+
+  return tableRows;
 }
 
 export default function Profiles() {
   const nav = useNavigate();
 
+  const { drivers, setDrivers, enforcers, setEnforcers } = useTFROData();
+
   const tabs = ["Enforcer", "Driver", "Colorum"];
   const [tab, setTab] = useState("Driver");
-
-  const [drivers, setDrivers] = useState(seedDrivers);
-  const [enforcers, setEnforcers] = useState(seedEnforcers);
 
   const [query, setQuery] = useState("");
   const [sortDir, setSortDir] = useState("asc");
@@ -114,31 +176,46 @@ export default function Profiles() {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let list = baseList;
 
     if (tab === "Enforcer") {
-      list = list.filter((e) => {
+      let list = baseList.filter((e) => {
         if (!q) return true;
-        return [e.name, e.idNumber, e.contact, e.address]
+
+        return [e.name, e.idNumber, e.contact, e.address, e.position, e.status]
           .join(" ")
           .toLowerCase()
           .includes(q);
       });
-    } else {
-      list = list.filter((d) => {
-        const firstVehicle = d.vehicles?.[0] || {};
-        if (!q) return true;
 
+      return [...list].sort((a, b) => {
+        const an = (a.name || "").toLowerCase();
+        const bn = (b.name || "").toLowerCase();
+
+        if (an < bn) return sortDir === "asc" ? -1 : 1;
+        if (an > bn) return sortDir === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    let driverRows = buildDriverTableRows(baseList);
+
+    if (q) {
+      driverRows = driverRows.filter(({ driver, vehicle, franchise }) => {
         return [
-          d.name,
-          d.franchiseNo,
-          d.address,
-          d.contact,
-          d.toda,
-          d.type,
-          firstVehicle.plateNo,
-          firstVehicle.motor,
-          firstVehicle.modelMake,
+          driver.name,
+          driver.operatorName,
+          driver.franchiseNo,
+          franchise?.number,
+          driver.address,
+          driver.contact,
+          driver.toda,
+          driver.type,
+          vehicle?.plateNo,
+          vehicle?.motor,
+          vehicle?.modelMake,
+          vehicle?.engine,
+          vehicle?.chassis,
+          vehicle?.status,
         ]
           .join(" ")
           .toLowerCase()
@@ -146,15 +223,31 @@ export default function Profiles() {
       });
     }
 
-    return [...list].sort((a, b) => {
-      const an = (a.name || "").toLowerCase();
-      const bn = (b.name || "").toLowerCase();
+    return [...driverRows].sort((a, b) => {
+      const an = (a.driver?.name || "").toLowerCase();
+      const bn = (b.driver?.name || "").toLowerCase();
 
       if (an < bn) return sortDir === "asc" ? -1 : 1;
       if (an > bn) return sortDir === "asc" ? 1 : -1;
+
       return 0;
     });
   }, [baseList, query, sortDir, tab]);
+
+  const exportDrivers = useMemo(() => {
+    if (tab === "Driver") {
+      return drivers.filter((d) => {
+        const type = normalizeDriverType(d.type);
+        return type === "WITH FRANCHISE" || type === "SPECIAL FRANCHISE";
+      });
+    }
+
+    if (tab === "Colorum") {
+      return drivers.filter((d) => normalizeDriverType(d.type) === "COLORUM");
+    }
+
+    return drivers;
+  }, [drivers, tab]);
 
   function headerTitle() {
     if (tab === "Driver") return "Driver Profiles";
@@ -191,6 +284,14 @@ export default function Profiles() {
     nav(`/profiles/${id}/transactions`);
   }
 
+  function handleExportExcel() {
+    exportProfilesToExcel({
+      drivers: exportDrivers,
+      enforcers,
+      activeTab: tab,
+    });
+  }
+
   const headerButtonClass = (active) =>
     `btn ${active ? "btn-primary" : "btn-outline-primary"} rounded-3 px-3`;
 
@@ -212,7 +313,7 @@ export default function Profiles() {
       <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
         <h1 className="h4 fw-bold mb-0">{headerTitle()}</h1>
 
-        <div className="d-flex align-items-center gap-2">
+        <div className="d-flex align-items-center gap-2 flex-wrap">
           <div className="input-group" style={{ width: 280 }}>
             <input
               className="form-control rounded-start-4"
@@ -226,8 +327,18 @@ export default function Profiles() {
           </div>
 
           <button
+            className="btn btn-success rounded-4 px-4 d-flex align-items-center gap-2"
+            onClick={handleExportExcel}
+            type="button"
+          >
+            <i className="bi bi-file-earmark-excel"></i>
+            Export Excel
+          </button>
+
+          <button
             className="btn btn-primary rounded-4 px-4"
             onClick={handleAddClick}
+            type="button"
           >
             + Add {tab === "Enforcer" ? "Enforcer" : "Profile"}
           </button>
@@ -243,6 +354,7 @@ export default function Profiles() {
               setTab(t);
               setQuery("");
             }}
+            type="button"
           >
             {t}
           </button>
@@ -263,6 +375,7 @@ export default function Profiles() {
                   onClick={() =>
                     setSortDir((prev) => (prev === "asc" ? "desc" : "asc"))
                   }
+                  type="button"
                 >
                   <i className="bi bi-arrow-down-up"></i>
                   Sort: {sortDir === "asc" ? "A-Z" : "Z-A"}
@@ -287,6 +400,7 @@ export default function Profiles() {
                           <th>Type</th>
                           <th>Contact</th>
                           <th>Address</th>
+                          <th>Violation Status</th>
                           {tab !== "Colorum" && <th>TODA / Franchise</th>}
                           <th className="text-end">Actions</th>
                         </>
@@ -295,95 +409,105 @@ export default function Profiles() {
                   </thead>
 
                   <tbody>
-                    {rows.map((item) => {
-                      const isEnforcer = tab === "Enforcer";
-                      const firstVehicle = item.vehicles?.[0] || {};
-
-                      return (
+                    {tab === "Enforcer" &&
+                      rows.map((item) => (
                         <tr key={item.id}>
                           <td>
                             <div className="d-flex align-items-center gap-3">
                               <Avatar name={item.name} />
                               <div>
                                 <div className="fw-semibold">{item.name}</div>
-
-                                {!isEnforcer && firstVehicle?.plateNo && (
-                                  <div className="small text-muted">
-                                    Plate No: {firstVehicle.plateNo}
-                                  </div>
-                                )}
-
-                                {isEnforcer && (
-                                  <div className="small text-muted">
-                                    Enforcer record
-                                  </div>
-                                )}
+                                <div className="small text-muted">Enforcer record</div>
                               </div>
                             </div>
                           </td>
 
-                          {isEnforcer ? (
-                            <>
-                              <td>{item.idNumber || "—"}</td>
-                              <td>{item.contact || "—"}</td>
-                              <td>{item.address || "—"}</td>
-                              <td className="text-end">
-                                <div className="d-inline-flex align-items-center gap-2">
-                                  <button
-                                    className="btn btn-sm btn-light rounded-circle"
-                                    title="View Enforcer Information"
-                                    onClick={() => goToProfile(item.id)}
-                                  >
-                                    <i className="bi bi-eye" />
-                                  </button>
-                                </div>
-                              </td>
-                            </>
-                          ) : (
-                            <>
-                              <td>
-                                <TypeBadge type={item.type} />
-                              </td>
-                              <td>{item.contact || "—"}</td>
-                              <td>{item.address || "—"}</td>
-
-                              {tab !== "Colorum" && (
-                                <td>
-                                  <div>{item.toda || "—"}</div>
-                                  <div className="small text-muted">
-                                    Franchise: {item.franchiseNo || "—"}
-                                  </div>
-                                </td>
-                              )}
-
-                              <td className="text-end">
-                                <div className="d-inline-flex align-items-center gap-2">
-                                  <button
-                                    className="btn btn-sm btn-light rounded-circle"
-                                    title="View Driver Information"
-                                    onClick={() => goToProfile(item.id)}
-                                  >
-                                    <i className="bi bi-eye" />
-                                  </button>
-
-                                  <button
-                                    className="btn btn-sm btn-light rounded-circle"
-                                    title="View Transaction Details"
-                                    onClick={() => goToTransactions(item.id)}
-                                  >
-                                    <i className="bi bi-receipt" />
-                                  </button>
-                                </div>
-                              </td>
-                            </>
-                          )}
+                          <td>{item.idNumber || "—"}</td>
+                          <td>{item.contact || "—"}</td>
+                          <td>{item.address || "—"}</td>
+                          <td className="text-end">
+                            <button
+                              className="btn btn-sm btn-light rounded-circle"
+                              title="View Enforcer Information"
+                              onClick={() => goToProfile(item.id)}
+                              type="button"
+                            >
+                              <i className="bi bi-eye" />
+                            </button>
+                          </td>
                         </tr>
-                      );
-                    })}
+                      ))}
+
+                    {tab !== "Enforcer" &&
+                      rows.map(({ rowId, driver, franchise }) => {
+                        const franchiseNo = franchise?.number || driver.franchiseNo || "—";
+
+                        return (
+                          <tr key={rowId}>
+                            <td>
+                              <div className="d-flex align-items-center gap-3">
+                                <Avatar name={driver.name} />
+                                <div>
+                                  <div className="fw-semibold">{driver.name}</div>
+                                  <div className="small text-muted">
+                                    Operator: {driver.operatorName || "—"}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td>
+                              <TypeBadge type={driver.type} />
+                            </td>
+
+                            <td>{driver.contact || "—"}</td>
+                            <td>{driver.address || "—"}</td>
+                            <td>
+                              <ViolationBadge driver={driver} />
+                            </td>
+
+                            {tab !== "Colorum" && (
+                              <td>
+                                <div>{driver.toda || "—"}</div>
+                                <div className="small text-muted">
+                                  Franchise: {franchiseNo}
+                                </div>
+                              </td>
+                            )}
+
+                            <td className="text-end">
+                              <div className="d-inline-flex align-items-center gap-2">
+                                <button
+                                  className="btn btn-sm btn-light rounded-circle"
+                                  title="View Driver Information"
+                                  onClick={() => goToProfile(driver.id)}
+                                  type="button"
+                                >
+                                  <i className="bi bi-eye" />
+                                </button>
+
+                                <button
+                                  className="btn btn-sm btn-light rounded-circle"
+                                  title="View Transaction Details"
+                                  onClick={() => goToTransactions(driver.id)}
+                                  type="button"
+                                >
+                                  <i className="bi bi-receipt" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
 
                     {rows.length === 0 && (
                       <tr>
-                        <td colSpan={tab === "Enforcer" ? 5 : tab === "Colorum" ? 5 : 6} className="text-center text-muted py-5">
+                        <td
+                          colSpan={
+                            tab === "Enforcer" ? 5 : tab === "Colorum" ? 6 : 7
+                          }
+                          className="text-center text-muted py-5"
+                        >
                           No results.
                         </td>
                       </tr>

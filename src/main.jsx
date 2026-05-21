@@ -6,8 +6,12 @@ import "bootstrap-icons/font/bootstrap-icons.css";
 import App from "./App";
 import "./index.css";
 
+import { TFRODataProvider } from "./context/TFRODataContext";
+
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <TFRODataProvider>
+      <App />
+    </TFRODataProvider>
   </React.StrictMode>
 );

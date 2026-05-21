@@ -175,8 +175,8 @@ export default function ViolationFormModal({
                     }
                   >
                     <option value="Colorum">Colorum</option>
-                    <option value="Registered">Registered</option>
-                    <option value="Temporary">Temporary</option>
+                    <option value="Regular Franchise">Regular Franchise</option>
+                    <option value="Temporary Franchise">Temporary Franchise</option>
                   </select>
                 </div>
 

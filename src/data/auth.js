@@ -5,7 +5,7 @@ const USERS = [
   {
     username: "admin",
     password: "admin123",
-    name: "System Admin",
+    name: "Kuya Ogie",
     role: "Admin",
   },
   {

@@ -70,6 +70,8 @@ function money(n) {
   }).format(Number(n || 0));
 }
 
+const emptyMembers = () => ["", "", "", "", ""];
+
 export default function Settings() {
   const [tab, setTab] = useState("general");
   const [incentive, setIncentive] = useState(10);
@@ -91,7 +93,6 @@ export default function Settings() {
   });
 
   const [editingViolationCode, setEditingViolationCode] = useState(null);
-
   const [editingToda, setEditingToda] = useState(null);
 
   const [memberForm, setMemberForm] = useState({
@@ -107,7 +108,7 @@ export default function Settings() {
     vicePresident: "",
     secretary: "",
     treasurer: "",
-    memberName: "",
+    members: emptyMembers(),
   });
 
   const totalTodas = useMemo(
@@ -120,7 +121,13 @@ export default function Settings() {
       barangayToda.reduce(
         (sum, b) =>
           sum +
-          b.todas.reduce((todaSum, t) => todaSum + (t.members?.length || 0), 0),
+          b.todas.reduce((todaSum, t) => {
+            const officersCount = Object.values(t.officers || {}).filter(
+              (name) => name && name.trim() !== ""
+            ).length;
+
+            return todaSum + officersCount + (t.members?.length || 0);
+          }, 0),
         0
       ),
     [barangayToda]
@@ -133,6 +140,18 @@ export default function Settings() {
       return acc;
     }, {});
   }, [violations]);
+
+  const resetTodaForm = (barangay = lucenaBarangays[0]) => {
+    setTodaForm({
+      barangay,
+      name: "",
+      president: "",
+      vicePresident: "",
+      secretary: "",
+      treasurer: "",
+      members: emptyMembers(),
+    });
+  };
 
   const tabBtn = (key, label, icon) => (
     <button
@@ -220,6 +239,10 @@ export default function Settings() {
   const addToda = () => {
     if (!todaForm.barangay || !todaForm.name) return;
 
+    const filteredMembers = todaForm.members
+      .map((m) => m.trim())
+      .filter((m) => m !== "");
+
     setBarangayToda((prev) =>
       prev.map((b) =>
         b.barangay === todaForm.barangay
@@ -235,7 +258,7 @@ export default function Settings() {
                     secretary: todaForm.secretary,
                     treasurer: todaForm.treasurer,
                   },
-                  members: todaForm.memberName ? [todaForm.memberName] : [],
+                  members: filteredMembers,
                 },
               ],
             }
@@ -243,31 +266,45 @@ export default function Settings() {
       )
     );
 
-    setTodaForm({
-      barangay: todaForm.barangay,
-      name: "",
-      president: "",
-      vicePresident: "",
-      secretary: "",
-      treasurer: "",
-      memberName: "",
-    });
+    resetTodaForm(todaForm.barangay);
   };
+
   const startEditToda = (barangay, toda) => {
-    setEditingToda({ barangay, todaName: toda.name });
+    const existingMembers = toda.members || [];
+
+    const minimumLines = 5;
+    const totalLines = Math.max(minimumLines, existingMembers.length);
+
+    const currentMembers = [
+      ...existingMembers,
+      ...Array(totalLines - existingMembers.length).fill(""),
+    ];
+
+    setEditingToda({
+      barangay,
+      todaName: toda.name,
+    });
 
     setTodaForm({
       barangay,
-      name: toda.name,
-      president: toda.officers.president || "",
-      vicePresident: toda.officers.vicePresident || "",
-      secretary: toda.officers.secretary || "",
-      treasurer: toda.officers.treasurer || "",
-      memberName: "",
+      name: toda.name || "",
+      president: toda.officers?.president || "",
+      vicePresident: toda.officers?.vicePresident || "",
+      secretary: toda.officers?.secretary || "",
+      treasurer: toda.officers?.treasurer || "",
+      members: currentMembers,
     });
   };
 
   const saveEditToda = () => {
+    if (!editingToda) return;
+
+    const filteredMembers = todaForm.members
+      .map((m) => m.trim())
+      .filter((m) => m !== "");
+
+    const currentBarangay = todaForm.barangay;
+
     setBarangayToda((prev) =>
       prev.map((b) =>
         b.barangay === editingToda.barangay
@@ -284,6 +321,7 @@ export default function Settings() {
                         secretary: todaForm.secretary,
                         treasurer: todaForm.treasurer,
                       },
+                      members: filteredMembers,
                     }
                   : t
               ),
@@ -293,28 +331,13 @@ export default function Settings() {
     );
 
     setEditingToda(null);
-    setTodaForm({
-      barangay: todaForm.barangay,
-      name: "",
-      president: "",
-      vicePresident: "",
-      secretary: "",
-      treasurer: "",
-      memberName: "",
-    });
+    resetTodaForm(currentBarangay);
   };
 
   const cancelEditToda = () => {
+    const currentBarangay = todaForm.barangay;
     setEditingToda(null);
-    setTodaForm({
-      barangay: todaForm.barangay,
-      name: "",
-      president: "",
-      vicePresident: "",
-      secretary: "",
-      treasurer: "",
-      memberName: "",
-    });
+    resetTodaForm(currentBarangay);
   };
 
   const addMemberToToda = (barangay, todaName) => {
@@ -345,26 +368,6 @@ export default function Settings() {
     });
   };
 
-  const deleteMemberFromToda = (barangay, todaName, memberName) => {
-    setBarangayToda((prev) =>
-      prev.map((b) =>
-        b.barangay === barangay
-          ? {
-              ...b,
-              todas: b.todas.map((t) =>
-                t.name === todaName
-                  ? {
-                      ...t,
-                      members: t.members.filter((m) => m !== memberName),
-                    }
-                  : t
-              ),
-            }
-          : b
-      )
-    );
-  };
-
   const deleteToda = (barangay, todaName) => {
     setBarangayToda((prev) =>
       prev.map((b) =>
@@ -382,7 +385,7 @@ export default function Settings() {
     <div className="container-fluid py-3">
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
-          <h1 className="h3 fw-bold mb-1">Settings</h1>
+          <h1 className="h3 fw-bold mb-1">System Configuration</h1>
           <div className="text-muted">
             Manage TIRS configuration, violations, penalties, barangays, and TODA records.
           </div>
@@ -420,7 +423,7 @@ export default function Settings() {
         <div className="col-12 col-md-3">
           <div className="card border-0 shadow-sm rounded-4">
             <div className="card-body">
-              <div className="text-muted small">Members</div>
+              <div className="text-muted small">Numbers of Drivers</div>
               <div className="h4 fw-bold mb-0">{totalMembers}</div>
             </div>
           </div>
@@ -463,7 +466,9 @@ export default function Settings() {
           <div className="col-12 col-xl-4">
             <div className="card border-0 shadow-sm rounded-4 h-100">
               <div className="card-body p-4">
-                <h5 className="fw-bold mb-1">Add Violation</h5>
+                <h5 className="fw-bold mb-1">
+                  {editingViolationCode ? "Edit Violation" : "Add Violation"}
+                </h5>
                 <div className="text-muted mb-4">Create a violation type with penalty amount.</div>
 
                 <div className="mb-3">
@@ -534,25 +539,16 @@ export default function Settings() {
 
                 {editingViolationCode ? (
                   <div className="d-flex gap-2 mt-4">
-                    <button
-                      className="btn btn-primary rounded-3 w-100"
-                      onClick={saveEditViolation}
-                    >
+                    <button className="btn btn-primary rounded-3 w-100" onClick={saveEditViolation}>
                       Save Edit
                     </button>
 
-                    <button
-                      className="btn btn-light border rounded-3 w-100"
-                      onClick={cancelEditViolation}
-                    >
+                    <button className="btn btn-light border rounded-3 w-100" onClick={cancelEditViolation}>
                       Cancel
                     </button>
                   </div>
                 ) : (
-                  <button
-                    className="btn btn-primary rounded-3 w-100 mt-4"
-                    onClick={addViolation}
-                  >
+                  <button className="btn btn-primary rounded-3 w-100 mt-4" onClick={addViolation}>
                     <i className="bi bi-plus-circle me-2" />
                     Add Violation
                   </button>
@@ -589,6 +585,7 @@ export default function Settings() {
                             <th className="text-end">Action</th>
                           </tr>
                         </thead>
+
                         <tbody>
                           {rows.map((v) => (
                             <tr key={v.code}>
@@ -598,20 +595,20 @@ export default function Settings() {
                               <td className="text-end fw-semibold">{money(v.penalty)}</td>
                               <td className="text-end">
                                 <div className="d-flex justify-content-end gap-2">
-                                <button
-                                  className="btn btn-sm btn-light"
-                                  onClick={() => startEditViolation(v)}
-                                >
-                                  Edit
-                                </button>
+                                  <button
+                                    className="btn btn-sm btn-light"
+                                    onClick={() => startEditViolation(v)}
+                                  >
+                                    Edit
+                                  </button>
 
-                                <button
-                                  className="btn btn-sm btn-light text-danger"
-                                  onClick={() => deleteViolation(v.code)}
-                                >
-                                  Delete
-                                </button>
-                              </div>
+                                  <button
+                                    className="btn btn-sm btn-light text-danger"
+                                    onClick={() => deleteViolation(v.code)}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -631,7 +628,9 @@ export default function Settings() {
           <div className="col-12 col-xl-4">
             <div className="card border-0 shadow-sm rounded-4 h-100">
               <div className="card-body p-4">
-                <h5 className="fw-bold mb-1">Add TODA</h5>
+                <h5 className="fw-bold mb-1">
+                  {editingToda ? "Edit TODA" : "Add TODA"}
+                </h5>
                 <div className="text-muted mb-4">
                   Assign TODA organization under a Lucena barangay.
                 </div>
@@ -644,6 +643,7 @@ export default function Settings() {
                     onChange={(e) =>
                       setTodaForm({ ...todaForm, barangay: e.target.value })
                     }
+                    disabled={!!editingToda}
                   >
                     {lucenaBarangays.map((b) => (
                       <option key={b} value={b}>
@@ -712,32 +712,43 @@ export default function Settings() {
                 </div>
 
                 <div className="mt-3">
-                  <label className="form-label fw-semibold">Initial Member</label>
-                  <input
-                    className="form-control rounded-3"
-                    value={todaForm.memberName}
-                    onChange={(e) =>
-                      setTodaForm({ ...todaForm, memberName: e.target.value })
-                    }
-                    placeholder="Optional"
-                  />
-                </div>
-                    {editingToda ? (
-                      <div className="d-flex gap-2 mt-4">
-                        <button className="btn btn-primary rounded-3 w-100" onClick={saveEditToda}>
-                          Save Edit
-                        </button>
+                  <label className="form-label fw-semibold">Other Members</label>
 
-                        <button className="btn btn-light border rounded-3 w-100" onClick={cancelEditToda}>
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button className="btn btn-primary rounded-3 w-100 mt-4" onClick={addToda}>
-                        <i className="bi bi-plus-circle me-2" />
-                        Add TODA
-                      </button>
-                    )}                
+                  {todaForm.members.map((member, index) => (
+                    <input
+                      key={index}
+                      className="form-control rounded-3 mb-2"
+                      value={member}
+                      onChange={(e) => {
+                        const updatedMembers = [...todaForm.members];
+                        updatedMembers[index] = e.target.value;
+
+                        setTodaForm({
+                          ...todaForm,
+                          members: updatedMembers,
+                        });
+                      }}
+                      placeholder={`Member ${index + 1}`}
+                    />
+                  ))}
+                </div>
+
+                {editingToda ? (
+                  <div className="d-flex gap-2 mt-4">
+                    <button className="btn btn-primary rounded-3 w-100" onClick={saveEditToda}>
+                      Save Edit
+                    </button>
+
+                    <button className="btn btn-light border rounded-3 w-100" onClick={cancelEditToda}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button className="btn btn-primary rounded-3 w-100 mt-4" onClick={addToda}>
+                    <i className="bi bi-plus-circle me-2" />
+                    Add TODA
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -789,20 +800,20 @@ export default function Settings() {
                                   </div>
 
                                   <div className="d-flex gap-2">
-                                  <button
-                                    className="btn btn-sm btn-light"
-                                    onClick={() => startEditToda(b.barangay, toda)}
-                                  >
-                                    Edit
-                                  </button>
+                                    <button
+                                      className="btn btn-sm btn-light"
+                                      onClick={() => startEditToda(b.barangay, toda)}
+                                    >
+                                      Edit
+                                    </button>
 
-                                  <button
-                                    className="btn btn-sm btn-light text-danger"
-                                    onClick={() => deleteToda(b.barangay, toda.name)}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
+                                    <button
+                                      className="btn btn-sm btn-light text-danger"
+                                      onClick={() => deleteToda(b.barangay, toda.name)}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
                                 </div>
 
                                 <div className="row g-2 mb-3">
@@ -828,80 +839,72 @@ export default function Settings() {
                                 </div>
 
                                 <div className="d-flex justify-content-between align-items-center gap-2 mb-2">
-                                <div className="small text-muted">Members</div>
+                                  <div className="small text-muted">Members</div>
 
-                                <button
-                                  className="btn btn-sm btn-outline-primary rounded-pill"
-                                  onClick={() =>
-                                    setMemberForm({
-                                      barangay: b.barangay,
-                                      todaName: toda.name,
-                                      memberName: "",
-                                    })
-                                  }
-                                >
-                                  + Add Member
-                                </button>
-                              </div>
-
-                              {memberForm.barangay === b.barangay &&
-                                memberForm.todaName === toda.name && (
-                                  <div className="d-flex gap-2 mb-3">
-                                    <input
-                                      className="form-control form-control-sm rounded-3"
-                                      placeholder="Member name"
-                                      value={memberForm.memberName}
-                                      onChange={(e) =>
-                                        setMemberForm({
-                                          ...memberForm,
-                                          memberName: e.target.value,
-                                        })
-                                      }
-                                    />
-
-                                    <button
-                                      className="btn btn-sm btn-primary rounded-3"
-                                      onClick={() => addMemberToToda(b.barangay, toda.name)}
-                                    >
-                                      Save
-                                    </button>
-
-                                    <button
-                                      className="btn btn-sm btn-light border rounded-3"
-                                      onClick={() =>
-                                        setMemberForm({
-                                          barangay: "",
-                                          todaName: "",
-                                          memberName: "",
-                                        })
-                                      }
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                )}
-
-                              {toda.members.length === 0 ? (
-                                <div className="text-muted small">No members listed.</div>
-                              ) : (
-                                <div className="d-flex flex-wrap gap-2">
-                                  {toda.members.map((m) => (
-                                    <span
-                                      key={m}
-                                      className="badge bg-light text-dark border rounded-pill px-3 py-2 d-inline-flex align-items-center gap-2"
-                                    >
-                                      {m}
-
-                                      <button
-                                        type="button"
-                                        className="btn-close"
-                                        style={{ fontSize: 8 }}
-                                        onClick={() => deleteMemberFromToda(b.barangay, toda.name, m)}
-                                      />
-                                    </span>
-                                  ))}
+                                  <button
+                                    className="btn btn-sm btn-outline-primary rounded-pill"
+                                    onClick={() =>
+                                      setMemberForm({
+                                        barangay: b.barangay,
+                                        todaName: toda.name,
+                                        memberName: "",
+                                      })
+                                    }
+                                  >
+                                    + Add Member
+                                  </button>
                                 </div>
 
+                                {memberForm.barangay === b.barangay &&
+                                  memberForm.todaName === toda.name && (
+                                    <div className="d-flex gap-2 mb-3">
+                                      <input
+                                        className="form-control form-control-sm rounded-3"
+                                        placeholder="Member name"
+                                        value={memberForm.memberName}
+                                        onChange={(e) =>
+                                          setMemberForm({
+                                            ...memberForm,
+                                            memberName: e.target.value,
+                                          })
+                                        }
+                                      />
+
+                                      <button
+                                        className="btn btn-sm btn-primary rounded-3"
+                                        onClick={() => addMemberToToda(b.barangay, toda.name)}
+                                      >
+                                        Save
+                                      </button>
+
+                                      <button
+                                        className="btn btn-sm btn-light border rounded-3"
+                                        onClick={() =>
+                                          setMemberForm({
+                                            barangay: "",
+                                            todaName: "",
+                                            memberName: "",
+                                          })
+                                        }
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  )}
+
+                                {toda.members.length === 0 ? (
+                                  <div className="text-muted small">No members listed.</div>
+                                ) : (
+                                  <div className="d-flex flex-wrap gap-2">
+                                    {toda.members.map((m, memberIndex) => (
+                                      <span
+                                        key={`${m}-${memberIndex}`}
+                                        className="badge bg-light text-dark border rounded-pill px-3 py-2"
+                                      >
+                                        {m}
+                                      </span>
+                                    ))}
+                                  </div>
                                 )}
                               </div>
                             ))

@@ -36,7 +36,7 @@ function MenuLinks({ onLinkClick, collapsed = false }) {
     {
       to: "/settings",
       icon: "bi-gear",
-      label: "Settings",
+      label: "System Configuration",
       roles: ["Admin"],
     },
   ].filter((item) => item.roles.includes(user?.role));

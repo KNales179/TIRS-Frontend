@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
-import { driversMock } from "../data/driversMock";
+import { useTFROData } from "../context/TFRODataContext";
 
 function normalizeDriverType(type) {
   const t = String(type || "").trim().toUpperCase();
@@ -27,40 +27,15 @@ function normalizeDriverType(type) {
 function getDriverTypeBadge(type) {
   const normalized = normalizeDriverType(type);
 
-  if (normalized === "WITH FRANCHISE") {
-    return (
-      <span className="badge rounded-pill bg-success-subtle text-success-emphasis px-3 py-2">
-        WITH FRANCHISE
-      </span>
-    );
-  }
-
-  if (normalized === "SPECIAL FRANCHISE") {
-    return (
-      <span className="badge rounded-pill bg-primary-subtle text-primary-emphasis px-3 py-2">
-        SPECIAL FRANCHISE
-      </span>
-    );
-  }
-
-  if (normalized === "COLORUM") {
-    return (
-      <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis px-3 py-2">
-        COLORUM
-      </span>
-    );
-  }
-
-  if (normalized === "TEMPORARY") {
-    return (
-      <span className="badge rounded-pill bg-info-subtle text-info-emphasis px-3 py-2">
-        TEMPORARY
-      </span>
-    );
-  }
+  const map = {
+    "WITH FRANCHISE": "bg-success-subtle text-success-emphasis",
+    "SPECIAL FRANCHISE": "bg-primary-subtle text-primary-emphasis",
+    COLORUM: "bg-warning-subtle text-warning-emphasis",
+    TEMPORARY: "bg-info-subtle text-info-emphasis",
+  };
 
   return (
-    <span className="badge rounded-pill bg-secondary-subtle text-secondary-emphasis px-3 py-2">
+    <span className={`badge rounded-pill px-3 py-2 ${map[normalized] || "bg-secondary-subtle text-secondary-emphasis"}`}>
       {normalized}
     </span>
   );
@@ -69,55 +44,43 @@ function getDriverTypeBadge(type) {
 function getVehicleStatusBadge(status) {
   const s = String(status || "").toLowerCase();
 
-  if (s === "unavailable" || s === "impounded" || s === "colorum") {
-    return (
-      <span className="badge rounded-pill bg-danger-subtle text-danger-emphasis">
-        {status || "—"}
-      </span>
-    );
+  if (["unavailable", "impounded", "colorum"].includes(s)) {
+    return <span className="badge rounded-pill bg-danger-subtle text-danger-emphasis">{status || "—"}</span>;
   }
 
   if (s === "temporary") {
-    return (
-      <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
-        {status || "—"}
-      </span>
-    );
+    return <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">{status || "—"}</span>;
   }
 
-  return (
-    <span className="badge rounded-pill bg-success-subtle text-success-emphasis">
-      {status || "—"}
-    </span>
-  );
+  return <span className="badge rounded-pill bg-success-subtle text-success-emphasis">{status || "—"}</span>;
 }
 
 function getViolationStatusBadge(status) {
   const s = String(status || "").toLowerCase();
 
   if (["done", "paid", "settled"].includes(s)) {
-    return (
-      <span className="badge rounded-pill bg-success-subtle text-success-emphasis">
-        {status}
-      </span>
-    );
+    return <span className="badge rounded-pill bg-success-subtle text-success-emphasis">{status}</span>;
   }
 
-  return (
-    <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
-      {status || "—"}
-    </span>
-  );
+  if (s === "on process") {
+    return <span className="badge rounded-pill bg-info-subtle text-info-emphasis">{status}</span>;
+  }
+
+  return <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">{status || "—"}</span>;
 }
 
 function formatMoney(value) {
   if (value == null || value === "") return "—";
-  return `₱${Number(value).toLocaleString("en-PH")}`;
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+  }).format(Number(value || 0));
 }
 
 function computeVehicleViolationSummary(vehicle) {
   const violations = vehicle?.violations || [];
   const total = violations.length;
+
   const unresolved = violations.filter((v) => {
     const s = String(v.status || "").toLowerCase();
     return !["done", "paid", "settled"].includes(s);
@@ -126,13 +89,34 @@ function computeVehicleViolationSummary(vehicle) {
   return { total, unresolved };
 }
 
+function InfoInput({ label, value, isEdit, onChange, col = "col-md-6" }) {
+  return (
+    <div className={col}>
+      <div className="text-muted small mb-1">{label}</div>
+      {isEdit ? (
+        <input
+          className="form-control bg-light border-0 rounded-4 px-3 py-3"
+          value={value || ""}
+          onChange={onChange}
+        />
+      ) : (
+        <div className="bg-light border-0 rounded-4 px-3 py-3">
+          {value || "—"}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DriverInfo() {
   const { id } = useParams();
   const nav = useNavigate();
 
+  const { drivers, setDrivers } = useTFROData();
+
   const driver = useMemo(
-    () => driversMock.find((d) => String(d.id) === String(id)),
-    [id]
+    () => drivers.find((d) => String(d.id) === String(id)),
+    [drivers, id]
   );
 
   const [isEdit, setIsEdit] = useState(false);
@@ -169,201 +153,24 @@ export default function DriverInfo() {
     setSelectedFranchiseId(driver?.franchises?.[0]?.id || "");
   }, [driver]);
 
-  useEffect(() => {
-    const styleId = "driver-info-print-style";
-
-    if (document.getElementById(styleId)) return;
-
-    const style = document.createElement("style");
-    style.id = styleId;
-    style.innerHTML = `
-      @media print {
-        @page {
-          size: auto;
-          margin: 10mm;
-        }
-
-        body * {
-          visibility: hidden;
-        }
-
-        #print-driver-info,
-        #print-driver-info * {
-          visibility: visible;
-        }
-
-        #print-driver-info {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 100%;
-          background: #fff !important;
-          color: #000 !important;
-          font-family: Arial, sans-serif !important;
-        }
-
-        #print-driver-info::before {
-          content: "Republic of the Philippines\\A Tricycle Franchising and Regulatory Office\\A DRIVER INFORMATION RECORD";
-          white-space: pre;
-          display: block;
-          text-align: center;
-          font-weight: bold;
-          font-size: 14px;
-          line-height: 1.5;
-          padding-bottom: 12px;
-          margin-bottom: 18px;
-          border-bottom: 4px solid #1d4ed8;
-          color: #111;
-        }
-
-        #print-driver-info .bg-light {
-          border: 1px solid #cbd5e1 !important;
-          background: #f8fafc !important;
-          border-radius: 6px !important;
-          padding: 8px 10px !important;
-          min-height: auto !important;
-        }
-
-        #print-driver-info .text-muted {
-          color: #334155 !important;
-          font-weight: bold !important;
-        }
-
-        #print-driver-info .fw-semibold {
-          font-size: 15px !important;
-          font-weight: bold !important;
-          color: #111 !important;
-          margin-top: 10px !important;
-          padding: 8px 10px !important;
-          background: #dbeafe !important;
-          border-left: 5px solid #1d4ed8 !important;
-        }
-
-        .no-print {
-          display: none !important;
-        }
-
-        .card,
-        .card-body {
-          box-shadow: none !important;
-          border: 0 !important;
-          background: #fff !important;
-        }
-
-        .table-responsive {
-          overflow: visible !important;
-        }
-
-        table {
-          width: 100% !important;
-          border-collapse: collapse !important;
-          page-break-inside: auto;
-        }
-
-        th {
-          border: 1px solid #111 !important;
-          padding: 8px 10px !important;
-          font-size: 11px !important;
-          vertical-align: top !important;
-          background: #1d4ed8 !important;
-          color: #fff !important;
-          font-weight: bold !important;
-        }
-
-        td {
-          border: 1px solid #111 !important;
-          padding: 8px 10px !important;
-          font-size: 11px !important;
-          vertical-align: top !important;
-          color: #111 !important;
-        }
-
-        tr:nth-child(even) td {
-          background: #eef4ff !important;
-        }
-
-        tr {
-          page-break-inside: avoid;
-          break-inside: avoid;
-        }
-
-        .badge {
-          border: 1px solid #d9d9d9 !important;
-          color: #000 !important;
-          background: #fff !important;
-        }
-
-        #print-driver-info .print-top-layout {
-          display: grid !important;
-          grid-template-columns: 1.6fr 0.9fr !important;
-          gap: 24px !important;
-          align-items: start !important;
-        }
-
-        #print-driver-info .print-left,
-        #print-driver-info .print-right {
-          width: 100% !important;
-        }
-
-        #print-driver-info .print-right {
-          display: flex !important;
-          justify-content: center !important;
-          align-items: flex-start !important;
-          page-break-inside: avoid !important;
-          break-inside: avoid !important;
-        }
-
-        #print-driver-info .print-photo-wrap {
-          text-align: center !important;
-          page-break-inside: avoid !important;
-          break-inside: avoid !important;
-        }
-
-        #print-driver-info .print-photo {
-          width: 170px !important;
-          height: 170px !important;
-          border-radius: 50% !important;
-          overflow: hidden !important;
-          margin: 0 auto !important;
-          background: #f3d2ff !important;
-          display: flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-        }
-
-        #print-driver-info .print-photo img {
-          width: 100% !important;
-          height: 100% !important;
-          object-fit: cover !important;
-        }
-
-        #print-driver-info .print-type {
-          margin-top: 12px !important;
-          text-align: center !important;
-        }
-
-        #print-driver-info .print-top-layout,
-        #print-driver-info .print-photo-wrap {
-          page-break-inside: avoid !important;
-          break-inside: avoid !important;
-        }
-      }
-    `;
-    document.head.appendChild(style);
-  }, []);
-
   if (!driver || !draft) {
     return (
       <div className="card rounded-4 shadow-sm border-0">
-        <div className="card-body">Driver not found.</div>
+        <div className="card-body">
+          <div className="fw-bold">Driver not found.</div>
+          <button className="btn btn-primary mt-3 rounded-4" onClick={() => nav(-1)}>
+            Go back
+          </button>
+        </div>
       </div>
     );
   }
 
   const driverType = normalizeDriverType(draft.type);
   const isColorum = driverType === "COLORUM";
-  const vehicles = draft?.vehicles || [];
-  const franchises = draft?.franchises || [];
+
+  const vehicles = draft.vehicles || [];
+  const franchises = draft.franchises || [];
   const hasMultipleFranchises = !isColorum && franchises.length >= 2;
 
   const selectedFranchise = !isColorum
@@ -385,21 +192,30 @@ export default function DriverInfo() {
     return (e) =>
       setDraft((prev) => {
         const nextVehicles = [...(prev.vehicles || [])];
+
         nextVehicles[index] = {
           ...(nextVehicles[index] || {}),
           [key]: e.target.value,
         };
-        return { ...prev, vehicles: nextVehicles };
+
+        return {
+          ...prev,
+          vehicles: nextVehicles,
+        };
       });
+  }
+
+  function handleSave() {
+    setDrivers((prev) =>
+      prev.map((item) => (String(item.id) === String(draft.id) ? draft : item))
+    );
+
+    setIsEdit(false);
+    alert("Saved.");
   }
 
   function handlePrint() {
     window.print();
-  }
-
-  function handleSave() {
-    setIsEdit(false);
-    alert("Saved (mock). Next step: connect to backend or shared state.");
   }
 
   function handlePhotoUpload(e) {
@@ -407,6 +223,7 @@ export default function DriverInfo() {
     if (!file) return;
 
     const photoUrl = URL.createObjectURL(file);
+
     setDraft((prev) => ({
       ...prev,
       photoUrl,
@@ -468,7 +285,7 @@ export default function DriverInfo() {
       violations: [],
     };
 
-    const newFranchiseId = `fr-${Date.now()}`;
+    const newFranchiseId = `fr_${Date.now()}`;
 
     setDraft((prev) => {
       const nextVehicles = [...(prev.vehicles || []), vehicleToAdd];
@@ -550,10 +367,11 @@ export default function DriverInfo() {
       date: newViolation.date,
       violation: newViolation.violation,
       location: newViolation.location,
-      originalFine: newViolation.originalFine,
-      declaredFine: newViolation.declaredFine,
+      originalFine: Number(newViolation.originalFine || 0),
+      declaredFine: Number(newViolation.declaredFine || 0),
       status: newViolation.status,
       apprehender: newViolation.apprehender,
+      franchiseId: selectedFranchise?.id || null,
     };
 
     setDraft((prev) => {
@@ -605,69 +423,37 @@ export default function DriverInfo() {
 
       <div className="card rounded-4 shadow-sm border-0">
         <div className="card-body" id="print-driver-info">
-          <div className="row g-4 align-items-start print-top-layout">
-            <div className="col-lg-8 print-left">
+          <div className="row g-4 align-items-start">
+            <div className="col-lg-8">
               <div className="row g-3">
-                <div className="col-md-6">
-                  <div className="text-muted small mb-1">Driver’s Name</div>
-                  {isEdit ? (
-                    <input
-                      className="form-control bg-light border-0 rounded-4 px-3 py-3"
-                      value={draft.name || ""}
-                      onChange={setField("name")}
-                    />
-                  ) : (
-                    <div className="bg-light border-0 rounded-4 px-3 py-3">
-                      {draft.name || "—"}
-                    </div>
-                  )}
-                </div>
+                <InfoInput
+                  label="Driver’s Name"
+                  value={draft.name}
+                  isEdit={isEdit}
+                  onChange={setField("name")}
+                />
 
-                <div className="col-md-6">
-                  <div className="text-muted small mb-1">Operator’s Name</div>
-                  {isEdit ? (
-                    <input
-                      className="form-control bg-light border-0 rounded-4 px-3 py-3"
-                      value={draft.operatorName || ""}
-                      onChange={setField("operatorName")}
-                    />
-                  ) : (
-                    <div className="bg-light border-0 rounded-4 px-3 py-3">
-                      {draft.operatorName || "—"}
-                    </div>
-                  )}
-                </div>
+                <InfoInput
+                  label="Operator’s Name"
+                  value={draft.operatorName}
+                  isEdit={isEdit}
+                  onChange={setField("operatorName")}
+                />
 
-                <div className="col-md-6">
-                  <div className="text-muted small mb-1">Contact Number</div>
-                  {isEdit ? (
-                    <input
-                      className="form-control bg-light border-0 rounded-4 px-3 py-3"
-                      value={draft.contact || ""}
-                      onChange={setField("contact")}
-                    />
-                  ) : (
-                    <div className="bg-light border-0 rounded-4 px-3 py-3">
-                      {draft.contact || "—"}
-                    </div>
-                  )}
-                </div>
+                <InfoInput
+                  label="Contact Number"
+                  value={draft.contact}
+                  isEdit={isEdit}
+                  onChange={setField("contact")}
+                />
 
                 {!isColorum && (
-                  <div className="col-md-6">
-                    <div className="text-muted small mb-1">TODA</div>
-                    {isEdit ? (
-                      <input
-                        className="form-control bg-light border-0 rounded-4 px-3 py-3"
-                        value={draft.toda || ""}
-                        onChange={setField("toda")}
-                      />
-                    ) : (
-                      <div className="bg-light border-0 rounded-4 px-3 py-3">
-                        {draft.toda || "—"}
-                      </div>
-                    )}
-                  </div>
+                  <InfoInput
+                    label="TODA"
+                    value={draft.toda}
+                    isEdit={isEdit}
+                    onChange={setField("toda")}
+                  />
                 )}
 
                 {!isColorum && !hasMultipleFranchises && (
@@ -696,20 +482,13 @@ export default function DriverInfo() {
                   </div>
                 )}
 
-                <div className="col-12">
-                  <div className="text-muted small mb-1">Address</div>
-                  {isEdit ? (
-                    <input
-                      className="form-control bg-light border-0 rounded-4 px-3 py-3"
-                      value={draft.address || ""}
-                      onChange={setField("address")}
-                    />
-                  ) : (
-                    <div className="bg-light border-0 rounded-4 px-3 py-3">
-                      {draft.address || "—"}
-                    </div>
-                  )}
-                </div>
+                <InfoInput
+                  label="Address"
+                  value={draft.address}
+                  isEdit={isEdit}
+                  onChange={setField("address")}
+                  col="col-12"
+                />
 
                 <div className="col-12 mt-2">
                   <div className="d-flex align-items-center justify-content-between mb-2">
@@ -752,90 +531,18 @@ export default function DriverInfo() {
                                 key={`${veh.plateNo || "vehicle"}-${index}`}
                                 onClick={() => handleVehicleSelect(index)}
                                 style={{
-                                  background:
-                                    index === selectedVehicleIndex ? "#eef2ff" : "",
+                                  background: index === selectedVehicleIndex ? "#eef2ff" : "",
                                   cursor: "pointer",
                                 }}
                               >
-                                <td>
-                                  {isEdit ? (
-                                    <input
-                                      className="form-control form-control-sm"
-                                      value={veh.motor || ""}
-                                      onChange={setVehicle(index, "motor")}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                  ) : (
-                                    veh.motor || "—"
-                                  )}
-                                </td>
-
-                                <td>
-                                  {isEdit ? (
-                                    <input
-                                      className="form-control form-control-sm"
-                                      value={veh.modelMake || ""}
-                                      onChange={setVehicle(index, "modelMake")}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                  ) : (
-                                    veh.modelMake || "—"
-                                  )}
-                                </td>
-
-                                <td>
-                                  {isEdit ? (
-                                    <input
-                                      className="form-control form-control-sm"
-                                      value={veh.engine || ""}
-                                      onChange={setVehicle(index, "engine")}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                  ) : (
-                                    veh.engine || "—"
-                                  )}
-                                </td>
-
-                                <td>
-                                  {isEdit ? (
-                                    <input
-                                      className="form-control form-control-sm"
-                                      value={veh.chassis || ""}
-                                      onChange={setVehicle(index, "chassis")}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                  ) : (
-                                    veh.chassis || "—"
-                                  )}
-                                </td>
-
-                                <td>
-                                  {isEdit ? (
-                                    <input
-                                      className="form-control form-control-sm"
-                                      value={veh.plateNo || ""}
-                                      onChange={setVehicle(index, "plateNo")}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                  ) : (
-                                    veh.plateNo || "—"
-                                  )}
-                                </td>
-
-                                <td>{getVehicleStatusBadge(veh.status)}</td>
-
-                                <td>
-                                  <div className="d-flex flex-column align-items-start gap-1">
-                                    <span className="badge rounded-pill bg-light text-dark border">
-                                      {summary.total} total
-                                    </span>
-                                    {summary.unresolved > 0 && (
-                                      <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
-                                        {summary.unresolved} pending
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
+                                <VehicleCells
+                                  veh={veh}
+                                  index={index}
+                                  isEdit={isEdit}
+                                  setVehicle={setVehicle}
+                                  summary={summary}
+                                  isColorum={isColorum}
+                                />
                               </tr>
                             );
                           })
@@ -844,6 +551,7 @@ export default function DriverInfo() {
                             .filter((_, index) => {
                               const franchise =
                                 franchises.find((f) => f.vehicleIndex === index) || null;
+
                               return !hasMultipleFranchises
                                 ? true
                                 : franchise?.id === selectedFranchise?.id;
@@ -861,80 +569,14 @@ export default function DriverInfo() {
                                 >
                                   <td>{franchise?.number || draft.franchiseNo || "—"}</td>
 
-                                  <td>
-                                    {isEdit ? (
-                                      <input
-                                        className="form-control form-control-sm"
-                                        value={veh.motor || ""}
-                                        onChange={setVehicle(originalIndex, "motor")}
-                                      />
-                                    ) : (
-                                      veh.motor || "—"
-                                    )}
-                                  </td>
-
-                                  <td>
-                                    {isEdit ? (
-                                      <input
-                                        className="form-control form-control-sm"
-                                        value={veh.modelMake || ""}
-                                        onChange={setVehicle(originalIndex, "modelMake")}
-                                      />
-                                    ) : (
-                                      veh.modelMake || "—"
-                                    )}
-                                  </td>
-
-                                  <td>
-                                    {isEdit ? (
-                                      <input
-                                        className="form-control form-control-sm"
-                                        value={veh.engine || ""}
-                                        onChange={setVehicle(originalIndex, "engine")}
-                                      />
-                                    ) : (
-                                      veh.engine || "—"
-                                    )}
-                                  </td>
-
-                                  <td>
-                                    {isEdit ? (
-                                      <input
-                                        className="form-control form-control-sm"
-                                        value={veh.chassis || ""}
-                                        onChange={setVehicle(originalIndex, "chassis")}
-                                      />
-                                    ) : (
-                                      veh.chassis || "—"
-                                    )}
-                                  </td>
-
-                                  <td>
-                                    {isEdit ? (
-                                      <input
-                                        className="form-control form-control-sm"
-                                        value={veh.plateNo || ""}
-                                        onChange={setVehicle(originalIndex, "plateNo")}
-                                      />
-                                    ) : (
-                                      veh.plateNo || "—"
-                                    )}
-                                  </td>
-
-                                  <td>{getVehicleStatusBadge(veh.status)}</td>
-
-                                  <td>
-                                    <div className="d-flex flex-column align-items-start gap-1">
-                                      <span className="badge rounded-pill bg-light text-dark border">
-                                        {summary.total} total
-                                      </span>
-                                      {summary.unresolved > 0 && (
-                                        <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
-                                          {summary.unresolved} pending
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
+                                  <VehicleCells
+                                    veh={veh}
+                                    index={originalIndex}
+                                    isEdit={isEdit}
+                                    setVehicle={setVehicle}
+                                    summary={summary}
+                                    isColorum={isColorum}
+                                  />
                                 </tr>
                               );
                             })
@@ -964,8 +606,9 @@ export default function DriverInfo() {
                           <th className="text-white">Date</th>
                           <th className="text-white">Violation</th>
                           <th className="text-white">Location</th>
-                          <th className="text-white">Original Fine</th>
+                          <th className="text-white">Official Fine</th>
                           <th className="text-white">Declared Fine</th>
+                          <th className="text-white">Discount</th>
                           <th className="text-white">Status</th>
                           <th className="text-white">Apprehender</th>
                         </tr>
@@ -974,38 +617,42 @@ export default function DriverInfo() {
                       <tbody>
                         {!selectedVehicle ? (
                           <tr>
-                            <td colSpan="7" className="text-center text-muted">
+                            <td colSpan="8" className="text-center text-muted">
                               No selected vehicle.
                             </td>
                           </tr>
                         ) : violations.length === 0 ? (
                           <tr>
-                            <td colSpan="7" className="text-center text-muted">
+                            <td colSpan="8" className="text-center text-muted">
                               No violation history found for this record.
                             </td>
                           </tr>
                         ) : (
-                          violations.map((item, index) => (
-                            <tr key={`${item.date || "violation"}-${index}`}>
-                              <td>{item.date || "—"}</td>
-                              <td>{item.violation || "—"}</td>
-                              <td>{item.location || "—"}</td>
-                              <td>{formatMoney(item.originalFine)}</td>
-                              <td>{formatMoney(item.declaredFine)}</td>
-                              <td>{getViolationStatusBadge(item.status)}</td>
-                              <td>{item.apprehender || "—"}</td>
-                            </tr>
-                          ))
+                          violations.map((item, index) => {
+                            const official = Number(item.originalFine || 0);
+                            const declared = Number(item.declaredFine || 0);
+                            const discount = Math.max(official - declared, 0);
+
+                            return (
+                              <tr key={`${item.date || "violation"}-${index}`}>
+                                <td>{item.date || "—"}</td>
+                                <td>{item.violation || "—"}</td>
+                                <td>{item.location || "—"}</td>
+                                <td>{formatMoney(official)}</td>
+                                <td>{formatMoney(declared)}</td>
+                                <td>{formatMoney(discount)}</td>
+                                <td>{getViolationStatusBadge(item.status)}</td>
+                                <td>{item.apprehender || "—"}</td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
                   </div>
 
                   <div className="mt-2 no-print">
-                    <Link
-                      to={`/profiles/${driver.id}/transactions`}
-                      className="link-primary"
-                    >
+                    <Link to={`/profiles/${driver.id}/transactions`} className="link-primary">
                       View Transaction Details
                     </Link>
                   </div>
@@ -1013,12 +660,9 @@ export default function DriverInfo() {
               </div>
             </div>
 
-            <div className="col-lg-4 d-flex justify-content-center print-right">
-              <div className="text-center print-photo-wrap">
-                <div
-                  className="position-relative mx-auto print-photo"
-                  style={{ width: 220, height: 220 }}
-                >
+            <div className="col-lg-4 d-flex justify-content-center">
+              <div className="text-center">
+                <div className="position-relative mx-auto" style={{ width: 220, height: 220 }}>
                   <div
                     className="rounded-circle d-flex align-items-center justify-content-center overflow-hidden"
                     style={{
@@ -1058,16 +702,11 @@ export default function DriverInfo() {
                     title="Upload Photo"
                   >
                     <i className="bi bi-plus-lg" style={{ fontSize: 20 }} />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      onChange={handlePhotoUpload}
-                    />
+                    <input type="file" accept="image/*" hidden onChange={handlePhotoUpload} />
                   </label>
                 </div>
 
-                <div className="mt-3 print-type">{getDriverTypeBadge(driverType)}</div>
+                <div className="mt-3">{getDriverTypeBadge(driverType)}</div>
               </div>
             </div>
           </div>
@@ -1105,292 +744,315 @@ export default function DriverInfo() {
       </div>
 
       {showAddVehicleModal && (
-        <>
-          <div className="modal fade show d-block" tabIndex="-1">
-            <div className="modal-dialog modal-dialog-centered modal-lg">
-              <div className="modal-content border-0 rounded-4 shadow">
-                <form onSubmit={handleAddVehicle}>
-                  <div className="modal-header border-0 pb-0">
-                    <div>
-                      <h5 className="modal-title fw-bold">
-                        {isColorum
-                          ? "Add New Vehicle Record"
-                          : "Add New Franchise / Vehicle Record"}
-                      </h5>
-                      <div className="text-muted small">
-                        {isColorum
-                          ? "This will add a new vehicle row to this driver profile."
-                          : "This will add a new franchise and link it to a new vehicle record."}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      className="btn-close"
-                      onClick={handleCloseAddVehicleModal}
-                    />
-                  </div>
-
-                  <div className="modal-body">
-                    <div className="row g-3">
-                      {!isColorum && (
-                        <div className="col-md-6">
-                          <label className="form-label small text-muted">
-                            Franchise Number
-                          </label>
-                          <input
-                            className="form-control rounded-4"
-                            placeholder="Example: TFRO-001"
-                            value={newVehicle.franchiseNo}
-                            onChange={(e) =>
-                              handleNewVehicleChange("franchiseNo", e.target.value)
-                            }
-                          />
-                        </div>
-                      )}
-
-                      <div className="col-md-6">
-                        <label className="form-label small text-muted">Motor</label>
-                        <input
-                          className="form-control rounded-4"
-                          placeholder="Example: Tricycle"
-                          value={newVehicle.motor}
-                          onChange={(e) =>
-                            handleNewVehicleChange("motor", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-6">
-                        <label className="form-label small text-muted">Model/Make</label>
-                        <input
-                          className="form-control rounded-4"
-                          placeholder="Example: Honda TMX"
-                          value={newVehicle.modelMake}
-                          onChange={(e) =>
-                            handleNewVehicleChange("modelMake", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-6">
-                        <label className="form-label small text-muted">Engine</label>
-                        <input
-                          className="form-control rounded-4"
-                          placeholder="Engine number"
-                          value={newVehicle.engine}
-                          onChange={(e) =>
-                            handleNewVehicleChange("engine", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-6">
-                        <label className="form-label small text-muted">Chassis</label>
-                        <input
-                          className="form-control rounded-4"
-                          placeholder="Chassis number"
-                          value={newVehicle.chassis}
-                          onChange={(e) =>
-                            handleNewVehicleChange("chassis", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-6">
-                        <label className="form-label small text-muted">Plate Number</label>
-                        <input
-                          className="form-control rounded-4"
-                          placeholder="Plate number"
-                          value={newVehicle.plateNo}
-                          onChange={(e) =>
-                            handleNewVehicleChange("plateNo", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-6">
-                        <label className="form-label small text-muted">Status</label>
-                        <select
-                          className="form-select rounded-4"
-                          value={newVehicle.status}
-                          onChange={(e) =>
-                            handleNewVehicleChange("status", e.target.value)
-                          }
-                        >
-                          <option value="Available">Available</option>
-                          <option value="Temporary">Temporary</option>
-                          <option value="Unavailable">Unavailable</option>
-                          <option value="Impounded">Impounded</option>
-                          <option value="Colorum">Colorum</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="modal-footer border-0 pt-0">
-                    <button
-                      type="button"
-                      className="btn btn-outline-secondary rounded-4 px-4"
-                      onClick={handleCloseAddVehicleModal}
-                    >
-                      Cancel
-                    </button>
-
-                    <button type="submit" className="btn btn-primary rounded-4 px-4">
-                      {isColorum ? "Add Vehicle" : "Add Franchise / Vehicle"}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-
-          <div className="modal-backdrop fade show" />
-        </>
+        <AddVehicleModal
+          isColorum={isColorum}
+          newVehicle={newVehicle}
+          onChange={handleNewVehicleChange}
+          onClose={handleCloseAddVehicleModal}
+          onSubmit={handleAddVehicle}
+        />
       )}
 
       {showAddViolationModal && (
-        <>
-          <div className="modal fade show d-block" tabIndex="-1">
-            <div className="modal-dialog modal-dialog-centered modal-lg">
-              <div className="modal-content border-0 rounded-4 shadow">
-                <form onSubmit={handleAddViolation}>
-                  <div className="modal-header border-0 pb-0">
-                    <div>
-                      <h5 className="modal-title fw-bold">Add Violation</h5>
-                      <div className="text-muted small">
-                        This violation will be added to the currently selected vehicle record.
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      className="btn-close"
-                      onClick={handleCloseAddViolationModal}
-                    />
-                  </div>
-
-                  <div className="modal-body">
-                    <div className="row g-3">
-                      <div className="col-md-6">
-                        <label className="form-label small text-muted">Date</label>
-                        <input
-                          type="date"
-                          className="form-control rounded-4"
-                          value={newViolation.date}
-                          onChange={(e) =>
-                            handleNewViolationChange("date", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-6">
-                        <label className="form-label small text-muted">Violation</label>
-                        <input
-                          className="form-control rounded-4"
-                          placeholder="Example: Illegal parking"
-                          value={newViolation.violation}
-                          onChange={(e) =>
-                            handleNewViolationChange("violation", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-6">
-                        <label className="form-label small text-muted">Location</label>
-                        <input
-                          className="form-control rounded-4"
-                          placeholder="Violation location"
-                          value={newViolation.location}
-                          onChange={(e) =>
-                            handleNewViolationChange("location", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-6">
-                        <label className="form-label small text-muted">Apprehender</label>
-                        <input
-                          className="form-control rounded-4"
-                          placeholder="Officer name"
-                          value={newViolation.apprehender}
-                          onChange={(e) =>
-                            handleNewViolationChange("apprehender", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-4">
-                        <label className="form-label small text-muted">
-                          Original Fine
-                        </label>
-                        <input
-                          type="number"
-                          className="form-control rounded-4"
-                          placeholder="0"
-                          value={newViolation.originalFine}
-                          onChange={(e) =>
-                            handleNewViolationChange("originalFine", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-4">
-                        <label className="form-label small text-muted">
-                          Declared Fine
-                        </label>
-                        <input
-                          type="number"
-                          className="form-control rounded-4"
-                          placeholder="0"
-                          value={newViolation.declaredFine}
-                          onChange={(e) =>
-                            handleNewViolationChange("declaredFine", e.target.value)
-                          }
-                        />
-                      </div>
-
-                      <div className="col-md-4">
-                        <label className="form-label small text-muted">Status</label>
-                        <select
-                          className="form-select rounded-4"
-                          value={newViolation.status}
-                          onChange={(e) =>
-                            handleNewViolationChange("status", e.target.value)
-                          }
-                        >
-                          <option value="Pending">Pending</option>
-                          <option value="On Process">On Process</option>
-                          <option value="Paid">Paid</option>
-                          <option value="Settled">Settled</option>
-                          <option value="Done">Done</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="modal-footer border-0 pt-0">
-                    <button
-                      type="button"
-                      className="btn btn-outline-secondary rounded-4 px-4"
-                      onClick={handleCloseAddViolationModal}
-                    >
-                      Cancel
-                    </button>
-
-                    <button type="submit" className="btn btn-primary rounded-4 px-4">
-                      Add Violation
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-
-          <div className="modal-backdrop fade show" />
-        </>
+        <AddViolationModal
+          newViolation={newViolation}
+          onChange={handleNewViolationChange}
+          onClose={handleCloseAddViolationModal}
+          onSubmit={handleAddViolation}
+        />
       )}
+    </div>
+  );
+}
+
+function VehicleCells({ veh, index, isEdit, setVehicle, summary, isColorum }) {
+  return (
+    <>
+      <td>
+        {isEdit ? (
+          <input
+            className="form-control form-control-sm"
+            value={veh.motor || ""}
+            onChange={setVehicle(index, "motor")}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          veh.motor || "—"
+        )}
+      </td>
+
+      <td>
+        {isEdit ? (
+          <input
+            className="form-control form-control-sm"
+            value={veh.modelMake || ""}
+            onChange={setVehicle(index, "modelMake")}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          veh.modelMake || "—"
+        )}
+      </td>
+
+      <td>
+        {isEdit ? (
+          <input
+            className="form-control form-control-sm"
+            value={veh.engine || ""}
+            onChange={setVehicle(index, "engine")}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          veh.engine || "—"
+        )}
+      </td>
+
+      <td>
+        {isEdit ? (
+          <input
+            className="form-control form-control-sm"
+            value={veh.chassis || ""}
+            onChange={setVehicle(index, "chassis")}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          veh.chassis || "—"
+        )}
+      </td>
+
+      <td>
+        {isEdit ? (
+          <input
+            className="form-control form-control-sm"
+            value={veh.plateNo || ""}
+            onChange={setVehicle(index, "plateNo")}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          veh.plateNo || "—"
+        )}
+      </td>
+
+      <td>{getVehicleStatusBadge(veh.status)}</td>
+
+      <td>
+        <div className="d-flex flex-column align-items-start gap-1">
+          <span className="badge rounded-pill bg-light text-dark border">
+            {summary.total} total
+          </span>
+
+          {summary.unresolved > 0 && (
+            <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
+              {summary.unresolved} pending
+            </span>
+          )}
+        </div>
+      </td>
+    </>
+  );
+}
+
+function AddVehicleModal({ isColorum, newVehicle, onChange, onClose, onSubmit }) {
+  return (
+    <>
+      <div className="modal fade show d-block" tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered modal-lg">
+          <div className="modal-content border-0 rounded-4 shadow">
+            <form onSubmit={onSubmit}>
+              <div className="modal-header border-0 pb-0">
+                <div>
+                  <h5 className="modal-title fw-bold">
+                    {isColorum ? "Add New Vehicle Record" : "Add New Franchise / Vehicle Record"}
+                  </h5>
+                  <div className="text-muted small">
+                    {isColorum
+                      ? "This will add a new vehicle row to this driver profile."
+                      : "This will add a new franchise and link it to a new vehicle record."}
+                  </div>
+                </div>
+
+                <button type="button" className="btn-close" onClick={onClose} />
+              </div>
+
+              <div className="modal-body">
+                <div className="row g-3">
+                  {!isColorum && (
+                    <FormInput
+                      label="Franchise Number"
+                      value={newVehicle.franchiseNo}
+                      onChange={(v) => onChange("franchiseNo", v)}
+                      placeholder="Example: TFRO-001"
+                    />
+                  )}
+
+                  <FormInput label="Motor" value={newVehicle.motor} onChange={(v) => onChange("motor", v)} />
+                  <FormInput label="Model/Make" value={newVehicle.modelMake} onChange={(v) => onChange("modelMake", v)} />
+                  <FormInput label="Engine" value={newVehicle.engine} onChange={(v) => onChange("engine", v)} />
+                  <FormInput label="Chassis" value={newVehicle.chassis} onChange={(v) => onChange("chassis", v)} />
+                  <FormInput label="Plate Number" value={newVehicle.plateNo} onChange={(v) => onChange("plateNo", v)} />
+
+                  <div className="col-md-6">
+                    <label className="form-label small text-muted">Status</label>
+                    <select
+                      className="form-select rounded-4"
+                      value={newVehicle.status}
+                      onChange={(e) => onChange("status", e.target.value)}
+                    >
+                      <option value="Available">Available</option>
+                      <option value="Temporary">Temporary</option>
+                      <option value="Unavailable">Unavailable</option>
+                      <option value="Impounded">Impounded</option>
+                      <option value="Colorum">Colorum</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-footer border-0 pt-0">
+                <button type="button" className="btn btn-outline-secondary rounded-4 px-4" onClick={onClose}>
+                  Cancel
+                </button>
+
+                <button type="submit" className="btn btn-primary rounded-4 px-4">
+                  {isColorum ? "Add Vehicle" : "Add Franchise / Vehicle"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+function AddViolationModal({ newViolation, onChange, onClose, onSubmit }) {
+  const official = Number(newViolation.originalFine || 0);
+  const declared = Number(newViolation.declaredFine || 0);
+  const discount = Math.max(official - declared, 0);
+
+  return (
+    <>
+      <div className="modal fade show d-block" tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered modal-lg">
+          <div className="modal-content border-0 rounded-4 shadow">
+            <form onSubmit={onSubmit}>
+              <div className="modal-header border-0 pb-0">
+                <div>
+                  <h5 className="modal-title fw-bold">Add Violation</h5>
+                  <div className="text-muted small">
+                    Official fine minus declared fine becomes the discount.
+                  </div>
+                </div>
+
+                <button type="button" className="btn-close" onClick={onClose} />
+              </div>
+
+              <div className="modal-body">
+                <div className="row g-3">
+                  <FormInput
+                    label="Date"
+                    type="date"
+                    value={newViolation.date}
+                    onChange={(v) => onChange("date", v)}
+                  />
+
+                  <FormInput
+                    label="Violation"
+                    value={newViolation.violation}
+                    onChange={(v) => onChange("violation", v)}
+                    placeholder="Example: Illegal parking"
+                  />
+
+                  <FormInput
+                    label="Location"
+                    value={newViolation.location}
+                    onChange={(v) => onChange("location", v)}
+                  />
+
+                  <FormInput
+                    label="Apprehender"
+                    value={newViolation.apprehender}
+                    onChange={(v) => onChange("apprehender", v)}
+                  />
+
+                  <FormInput
+                    label="Official Fine"
+                    type="number"
+                    value={newViolation.originalFine}
+                    onChange={(v) => onChange("originalFine", v)}
+                  />
+
+                  <FormInput
+                    label="Declared Fine"
+                    type="number"
+                    value={newViolation.declaredFine}
+                    onChange={(v) => onChange("declaredFine", v)}
+                  />
+
+                  <FormInput
+                    label="Auto Discount"
+                    value={formatMoney(discount)}
+                    onChange={() => {}}
+                    disabled
+                  />
+
+                  <div className="col-md-6">
+                    <label className="form-label small text-muted">Status</label>
+                    <select
+                      className="form-select rounded-4"
+                      value={newViolation.status}
+                      onChange={(e) => onChange("status", e.target.value)}
+                    >
+                      <option value="Pending">Pending</option>
+                      <option value="On Process">On Process</option>
+                      <option value="Paid">Paid</option>
+                      <option value="Settled">Settled</option>
+                      <option value="Done">Done</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-footer border-0 pt-0">
+                <button type="button" className="btn btn-outline-secondary rounded-4 px-4" onClick={onClose}>
+                  Cancel
+                </button>
+
+                <button type="submit" className="btn btn-primary rounded-4 px-4">
+                  Add Violation
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+function FormInput({
+  label,
+  value,
+  onChange,
+  placeholder = "",
+  type = "text",
+  disabled = false,
+}) {
+  return (
+    <div className="col-md-6">
+      <label className="form-label small text-muted">{label}</label>
+      <input
+        type={type}
+        className="form-control rounded-4"
+        placeholder={placeholder}
+        value={value || ""}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }
