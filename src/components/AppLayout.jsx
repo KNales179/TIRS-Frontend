@@ -1,3 +1,4 @@
+//components/AppLayout.jsx
 import { Outlet } from "react-router-dom";
 import { useState } from "react";
 import Sidebar from "./Sidebar";

@@ -1,73 +1,84 @@
-const KEY = "tfro_admin_auth";
-const USER_KEY = "tfro_admin_user";
+// src/data/auth.js
 
-const USERS = [
-  {
-    username: "admin",
-    password: "admin123",
-    name: "Kuya Ogie",
-    role: "Admin",
-  },
-  {
-    username: "staff",
-    password: "staff123",
-    name: "TFRO Staff",
-    role: "Staff",
-  },
-  {
-    username: "enforcer",
-    password: "enforcer123",
-    name: "Traffic Enforcer",
-    role: "Enforcer",
-  },
-];
+import API_BASE_URL from "../api/api";
 
-export function login(username, password, remember = true) {
-  const user = USERS.find(
-    (u) => u.username === username && u.password === password
-  );
+const TOKEN_KEY = "tirs_admin_token";
+const USER_KEY = "tirs_admin_user";
 
-  if (!user) return false;
+export async function login(username, password, remember = true) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        username,
+        password,
+      }),
+    });
 
-  const safeUser = {
-    username: user.username,
-    name: user.name,
-    role: user.role,
-  };
+    const data = await response.json();
 
-  if (remember) {
-    localStorage.setItem(KEY, "1");
-    localStorage.setItem(USER_KEY, JSON.stringify(safeUser));
-  } else {
-    sessionStorage.setItem(KEY, "1");
-    sessionStorage.setItem(USER_KEY, JSON.stringify(safeUser));
+    if (!response.ok) {
+      return {
+        success: false,
+        message: data.message || "Login failed",
+      };
+    }
+
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    sessionStorage.removeItem(USER_KEY);
+
+    const storage = remember ? localStorage : sessionStorage;
+
+    storage.setItem(TOKEN_KEY, data.token);
+    storage.setItem(USER_KEY, JSON.stringify(data.user));
+
+    return {
+      success: true,
+      mustChangePassword: data.must_change_password,
+      user: data.user,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message,
+    };
   }
-
-  return true;
 }
 
 export function logout() {
-  localStorage.removeItem(KEY);
-  sessionStorage.removeItem(KEY);
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+
   localStorage.removeItem(USER_KEY);
   sessionStorage.removeItem(USER_KEY);
 }
 
-export function isAuthed() {
+export function getToken() {
   return (
-    localStorage.getItem(KEY) === "1" ||
-    sessionStorage.getItem(KEY) === "1"
+    localStorage.getItem(TOKEN_KEY) ||
+    sessionStorage.getItem(TOKEN_KEY)
   );
+}
+
+export function isAuthed() {
+  return !!getToken();
 }
 
 export function getUser() {
   const raw =
-    localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY);
+    localStorage.getItem(USER_KEY) ||
+    sessionStorage.getItem(USER_KEY);
 
   return raw ? JSON.parse(raw) : null;
 }
 
 export function hasRole(allowedRoles = []) {
   const user = getUser();
+
   return user ? allowedRoles.includes(user.role) : false;
 }

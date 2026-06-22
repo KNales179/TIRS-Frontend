@@ -1,3 +1,5 @@
+// components/Sidebar.jsx
+
 import { NavLink, useNavigate } from "react-router-dom";
 import { logout, getUser } from "../data/auth";
 import tfroSeal from "../assets/tfro-seal.png";
@@ -11,6 +13,26 @@ const linkClass = ({ isActive }, collapsed = false) =>
     isActive ? "bg-primary text-white" : "text-secondary"
   }`;
 
+function getDisplayName(user) {
+  return (
+    user?.full_name ||
+    user?.name ||
+    user?.username ||
+    "Unknown User"
+  );
+}
+
+function getRoleLabel(role) {
+  const labels = {
+    SUPER_ADMIN: "Super Admin",
+    ADMIN: "Admin",
+    STAFF: "Staff",
+    VIEWER: "Viewer",
+  };
+
+  return labels[role] || role || "User";
+}
+
 function MenuLinks({ onLinkClick, collapsed = false }) {
   const user = getUser();
 
@@ -19,25 +41,25 @@ function MenuLinks({ onLinkClick, collapsed = false }) {
       to: "/dashboard",
       icon: "bi-speedometer2",
       label: "Dashboard",
-      roles: ["Admin", "Staff", "Enforcer"],
+      roles: ["SUPER_ADMIN", "ADMIN", "STAFF", "VIEWER"],
     },
     {
       to: "/profiles",
       icon: "bi-person",
       label: "Profiles",
-      roles: ["Admin", "Staff"],
+      roles: ["SUPER_ADMIN", "ADMIN", "STAFF"],
     },
     {
       to: "/violations",
       icon: "bi-exclamation-triangle",
       label: "Violations",
-      roles: ["Admin", "Staff", "Enforcer"],
+      roles: ["SUPER_ADMIN", "ADMIN", "STAFF"],
     },
     {
       to: "/settings",
       icon: "bi-gear",
       label: "System Configuration",
-      roles: ["Admin"],
+      roles: ["SUPER_ADMIN", "ADMIN"],
     },
   ].filter((item) => item.roles.includes(user?.role));
 
@@ -60,6 +82,7 @@ function MenuLinks({ onLinkClick, collapsed = false }) {
               alignItems: "center",
             }}
           />
+
           {!collapsed && <span>{item.label}</span>}
         </NavLink>
       ))}
@@ -79,7 +102,9 @@ function BrandHeader({ collapsed, onToggle }) {
           className={`d-flex align-items-center ${
             collapsed ? "justify-content-center" : "gap-3"
           }`}
-          style={{ cursor: collapsed ? "pointer" : "default" }}
+          style={{
+            cursor: collapsed ? "pointer" : "default",
+          }}
           onClick={collapsed ? onToggle : undefined}
           title={collapsed ? "Expand sidebar" : ""}
           aria-label={collapsed ? "Expand sidebar" : undefined}
@@ -87,7 +112,11 @@ function BrandHeader({ collapsed, onToggle }) {
           <img
             src={tfroSeal}
             alt="TFRO Seal"
-            style={{ width: 56, height: 56, objectFit: "contain" }}
+            style={{
+              width: 56,
+              height: 56,
+              objectFit: "contain",
+            }}
           />
 
           {!collapsed && (
@@ -102,6 +131,7 @@ function BrandHeader({ collapsed, onToggle }) {
               >
                 TIRS
               </div>
+
               <div className="text-muted small">
                 Tricycle Integrated Records System
               </div>
@@ -131,20 +161,36 @@ function BrandHeader({ collapsed, onToggle }) {
     </div>
   );
 }
-const user = getUser();
-function UserFooter({ onLogout, collapsed }) {
+
+function UserFooter({ onLogout, collapsed, onProfileClick }) {
   const user = getUser();
+
   return (
     <div className="p-3 border-top bg-white">
       {collapsed ? (
         <div className="d-flex flex-column align-items-center gap-3">
-          <div
-            className="rounded-circle border d-flex align-items-center justify-content-center"
-            style={{ width: 40, height: 40 }}
-            title="Admin"
+          <button
+            type="button"
+            onClick={onProfileClick}
+            className="btn p-0 border-0 bg-transparent"
+            title="View profile"
+            aria-label="View profile"
           >
-            <i className="bi bi-person" style={{ fontSize: 22 }} />
-          </div>
+            <div
+              className="rounded-circle border d-flex align-items-center justify-content-center"
+              style={{
+                width: 40,
+                height: 40,
+              }}
+            >
+              <i
+                className="bi bi-person"
+                style={{
+                  fontSize: 22,
+                }}
+              />
+            </div>
+          </button>
 
           <button
             onClick={onLogout}
@@ -152,24 +198,54 @@ function UserFooter({ onLogout, collapsed }) {
             title="Logout"
             aria-label="Logout"
           >
-            <i className="bi bi-box-arrow-right" style={{ fontSize: 25 }} />
+            <i
+              className="bi bi-box-arrow-right"
+              style={{
+                fontSize: 25,
+              }}
+            />
           </button>
         </div>
       ) : (
         <div className="d-flex align-items-center justify-content-between">
-          <div className="d-flex align-items-center gap-3">
+          <button
+            type="button"
+            onClick={onProfileClick}
+            className="btn p-0 border-0 bg-transparent text-start d-flex align-items-center gap-3"
+            title="View profile"
+            aria-label="View profile"
+            style={{
+              minWidth: 0,
+            }}
+          >
             <div
-              className="rounded-circle border d-flex align-items-center justify-content-center"
-              style={{ width: 40, height: 40 }}
+              className="rounded-circle border d-flex align-items-center justify-content-center flex-shrink-0"
+              style={{
+                width: 40,
+                height: 40,
+              }}
             >
-              <i className="bi bi-person" style={{ fontSize: 22 }} />
+              <i
+                className="bi bi-person"
+                style={{
+                  fontSize: 22,
+                }}
+              />
             </div>
 
-            <div className="lh-sm">
-            <div className="fw-semibold">{user?.name || "Unknown User"}</div>
-            <div className="text-muted small">{user?.role || "User"}</div>
+            <div className="lh-sm" style={{ minWidth: 0 }}>
+              <div
+                className="fw-semibold text-truncate"
+                style={{ maxWidth: 150 }}
+              >
+                {getDisplayName(user)}
+              </div>
+
+              <div className="text-muted small">
+                {getRoleLabel(user?.role)}
+              </div>
             </div>
-          </div>
+          </button>
 
           <button
             onClick={onLogout}
@@ -177,7 +253,12 @@ function UserFooter({ onLogout, collapsed }) {
             title="Logout"
             aria-label="Logout"
           >
-            <i className="bi bi-box-arrow-right" style={{ fontSize: 25 }} />
+            <i
+              className="bi bi-box-arrow-right"
+              style={{
+                fontSize: 25,
+              }}
+            />
           </button>
         </div>
       )}
@@ -190,14 +271,20 @@ export default function Sidebar({ collapsed = false, setCollapsed }) {
 
   function handleLogout() {
     logout();
-    navigate("/login", { replace: true });
+
+    navigate("/login", {
+      replace: true,
+    });
+  }
+
+  function handleProfileClick() {
+    navigate("/user-profile");
   }
 
   const desktopWidth = collapsed ? 72 : 280;
 
   return (
     <>
-      {/* Desktop sidebar */}
       <aside
         className="d-none d-lg-flex flex-column position-fixed border-end"
         style={{
@@ -219,29 +306,50 @@ export default function Sidebar({ collapsed = false, setCollapsed }) {
         </nav>
 
         <div className="mt-auto">
-          <UserFooter onLogout={handleLogout} collapsed={collapsed} />
+          <UserFooter
+            onLogout={handleLogout}
+            collapsed={collapsed}
+            onProfileClick={handleProfileClick}
+          />
         </div>
       </aside>
 
-      {/* Mobile offcanvas */}
-      <div className="offcanvas offcanvas-start" tabIndex="-1" id="tfroSidebar">
+      <div
+        className="offcanvas offcanvas-start"
+        tabIndex="-1"
+        id="tfroSidebar"
+      >
         <div className="offcanvas-body d-flex flex-column p-0">
-          <BrandHeader collapsed={false} onToggle={() => {}} />
+          <BrandHeader
+            collapsed={false}
+            onToggle={() => {}}
+          />
 
           <div className="p-3">
-            <MenuLinks onLinkClick={() => {}} collapsed={false} />
+            <MenuLinks
+              onLinkClick={() => {}}
+              collapsed={false}
+            />
           </div>
 
           <div className="mt-auto">
-            <UserFooter onLogout={handleLogout} collapsed={false} />
+            <UserFooter
+              onLogout={handleLogout}
+              collapsed={false}
+              onProfileClick={handleProfileClick}
+            />
           </div>
         </div>
       </div>
 
-      {/* Mobile floating menu button */}
       <button
         className="btn btn-primary d-lg-none position-fixed"
-        style={{ left: 16, bottom: 16, borderRadius: 14, zIndex: 1050 }}
+        style={{
+          left: 16,
+          bottom: 16,
+          borderRadius: 14,
+          zIndex: 1050,
+        }}
         type="button"
         data-bs-toggle="offcanvas"
         data-bs-target="#tfroSidebar"

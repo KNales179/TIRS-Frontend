@@ -1,3 +1,4 @@
+//App.jsx
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "./components/AppLayout";
 import Login from "./pages/Login";
@@ -8,7 +9,9 @@ import EnforcerInfo from "./pages/EnforcerInfo";
 import TransactionDetails from "./pages/TransactionDetails";
 import Violations from "./pages/Violations";
 import Settings from "./pages/Settings";
+import FirstLogin from "./pages/FirstLogin";
 import { isAuthed } from "./data/auth";
+import UserProfile from "./pages/UserProfile";
 
 function Protected({ children }) {
   return isAuthed() ? children : <Navigate to="/login" replace />;
@@ -35,6 +38,8 @@ export default function App() {
           <Route path="/profiles/:id/transactions" element={<TransactionDetails />} />
           <Route path="/violations" element={<Violations />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/first-login" element={<FirstLogin />} />
+          <Route path="/user-profile" element={<UserProfile />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

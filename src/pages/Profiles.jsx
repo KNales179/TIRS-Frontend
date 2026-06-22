@@ -1,9 +1,33 @@
-import React, { useMemo, useState } from "react";
+// pages/Profiles.jsx
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DriverFormModal from "../components/DriverFormModal";
 import EnforcerFormModal from "../components/EnforcerFormModal";
 import { exportProfilesToExcel } from "../utils/exportExcel";
-import { useTFROData } from "../context/TFRODataContext";
+import { getToken } from "../data/auth";
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+async function apiRequest(path, options = {}) {
+  const token = getToken();
+
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(data?.message || "Request failed");
+  }
+
+  return data;
+}
 
 function Avatar({ name }) {
   const initials = (name || "?")
@@ -37,6 +61,7 @@ function normalizeDriverType(type) {
 
   if (
     t === "REGISTERED" ||
+    t === "REGULAR" ||
     t === "WITH FRANCHISE" ||
     t === "FRANCHISED" ||
     t === "FOR HAILING"
@@ -52,6 +77,95 @@ function normalizeDriverType(type) {
   if (t === "TEMPORARY") return "TEMPORARY";
 
   return t || "—";
+}
+
+function frontendTypeToBackendClassification(type) {
+  const normalized = normalizeDriverType(type);
+
+  if (normalized === "WITH FRANCHISE") return "REGULAR";
+  if (normalized === "SPECIAL FRANCHISE") return "SPECIAL";
+  if (normalized === "COLORUM") return "COLORUM";
+  if (normalized === "TEMPORARY") return "TEMPORARY";
+
+  return "REGULAR";
+}
+
+function splitFullName(fullName = "") {
+  const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) {
+    return {
+      first_name: "",
+      middle_name: null,
+      last_name: "",
+    };
+  }
+
+  if (parts.length === 1) {
+    return {
+      first_name: parts[0],
+      middle_name: null,
+      last_name: parts[0],
+    };
+  }
+
+  return {
+    first_name: parts[0],
+    middle_name: parts.length > 2 ? parts.slice(1, -1).join(" ") : null,
+    last_name: parts[parts.length - 1],
+  };
+}
+
+function fullNameFromBackend(driver) {
+  return [driver.first_name, driver.middle_name, driver.last_name, driver.suffix]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function normalizeBackendDriver(driver) {
+  return {
+    id: driver.id,
+    driver_code: driver.driver_code,
+    role: "Driver",
+    type: driver.classification,
+    classification: driver.classification,
+    franchiseNo: driver.franchise_number || driver.franchiseNo || "",
+    name: fullNameFromBackend(driver),
+    operatorName: driver.operator_name || driver.operatorName || "—",
+    address: driver.address || "",
+    contact: driver.contact_number || "",
+    toda: driver.toda || driver.toda_name || "—",
+    photoUrl: driver.photo_url || "",
+    vehicles: driver.vehicles || [],
+    franchises: driver.franchises || [],
+    transactions: driver.transactions || [],
+    raw: driver,
+  };
+}
+
+function buildCreateDriverPayload(payload, activeTab) {
+  const nameParts = splitFullName(payload.name);
+
+  return {
+    classification:
+      activeTab === "Colorum"
+        ? "COLORUM"
+        : frontendTypeToBackendClassification(payload.type || payload.classification),
+
+    first_name: payload.first_name || nameParts.first_name,
+    middle_name: payload.middle_name || nameParts.middle_name,
+    last_name: payload.last_name || nameParts.last_name,
+    suffix: payload.suffix || null,
+
+    birth_date: payload.birth_date || null,
+    gender: payload.gender || null,
+    contact_number: payload.contact_number || payload.contact || null,
+    address: payload.address || null,
+    license_number: payload.license_number || null,
+    license_expiry: payload.license_expiry || null,
+    photo_url: payload.photo_url || payload.photoUrl || null,
+    status: payload.status || "ACTIVE",
+  };
 }
 
 function TypeBadge({ type }) {
@@ -99,61 +213,107 @@ function ViolationBadge({ driver }) {
   );
 }
 
-function makeId(prefix = "x") {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
-}
-
 function getFranchiseForVehicle(driver, vehicleIndex) {
+  const vehicle = driver.vehicles?.[vehicleIndex];
   const franchises = driver.franchises || [];
-  return franchises.find((f) => Number(f.vehicleIndex) === Number(vehicleIndex)) || null;
+
+  if (!vehicle?.id) return null;
+
+  return franchises.find((f) => Number(f.vehicle_id) === Number(vehicle.id)) || null;
 }
 
 function buildDriverTableRows(drivers) {
-  const tableRows = [];
+  return drivers.map((driver) => ({
+    rowId: driver.id,
+    driver,
+  }));
+}
 
-  drivers.forEach((driver) => {
-    const vehicles = driver.vehicles || [];
+function getDriverFranchiseSummary(driver) {
+  const franchises = (driver.franchises || []).filter((f) => f?.number || f?.toda_name);
 
-    if (vehicles.length === 0) {
-      tableRows.push({
-        rowId: `${driver.id}-empty`,
-        driver,
-        vehicle: null,
-        vehicleIndex: -1,
-        franchise: null,
-      });
-      return;
-    }
+  if (franchises.length === 0) {
+    return {
+      visible: [],
+      hasMore: false,
+    };
+  }
 
-    vehicles.forEach((vehicle, index) => {
-      const franchise = getFranchiseForVehicle(driver, index);
+  return {
+    visible: franchises.slice(0, 3),
+    hasMore: franchises.length > 3,
+  };
+}
 
-      tableRows.push({
-        rowId: `${driver.id}-${vehicle.plateNo || index}`,
-        driver,
-        vehicle,
-        vehicleIndex: index,
-        franchise,
-      });
-    });
-  });
-
-  return tableRows;
+function normalizeBackendEnforcer(enforcer) {
+  return {
+    id: enforcer.id,
+    enforcer_code: enforcer.enforcer_code,
+    idNumber: enforcer.enforcer_code,
+    name: [enforcer.first_name, enforcer.middle_name, enforcer.last_name, enforcer.suffix]
+      .filter(Boolean)
+      .join(" "),
+    contact: enforcer.contact_number || "",
+    address: enforcer.address || "",
+    photoUrl: enforcer.photo_url || "",
+    status: enforcer.status || "ACTIVE",
+    raw: enforcer,
+  };
 }
 
 export default function Profiles() {
   const nav = useNavigate();
 
-  const { drivers, setDrivers, enforcers, setEnforcers } = useTFROData();
-
   const tabs = ["Enforcer", "Driver", "Colorum"];
   const [tab, setTab] = useState("Driver");
+
+  const [drivers, setDrivers] = useState([]);
+  const [enforcers, setEnforcers] = useState([]);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const [query, setQuery] = useState("");
   const [sortDir, setSortDir] = useState("asc");
 
   const [showDriverModal, setShowDriverModal] = useState(false);
   const [showEnforcerModal, setShowEnforcerModal] = useState(false);
+
+  async function fetchDrivers() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await apiRequest("/drivers");
+      const list = response.data || response.drivers || [];
+      setDrivers(list.map(normalizeBackendDriver));
+    } catch (err) {
+      setError(err.message || "Failed to fetch drivers");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchEnforcers() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await apiRequest("/enforcers");
+      const list = response.data || response.enforcers || [];
+
+      setEnforcers(list.map(normalizeBackendEnforcer));
+    } catch (err) {
+      setError(err.message || "Failed to fetch enforcers");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchDrivers();
+    fetchEnforcers();
+  }, []);
 
   const baseList = useMemo(() => {
     if (tab === "Driver") {
@@ -200,22 +360,32 @@ export default function Profiles() {
     let driverRows = buildDriverTableRows(baseList);
 
     if (q) {
-      driverRows = driverRows.filter(({ driver, vehicle, franchise }) => {
+      driverRows = driverRows.filter(({ driver }) => {
+        const franchises = driver.franchises || [];
+        const vehicles = driver.vehicles || [];
+
         return [
           driver.name,
           driver.operatorName,
           driver.franchiseNo,
-          franchise?.number,
           driver.address,
           driver.contact,
           driver.toda,
           driver.type,
-          vehicle?.plateNo,
-          vehicle?.motor,
-          vehicle?.modelMake,
-          vehicle?.engine,
-          vehicle?.chassis,
-          vehicle?.status,
+          ...franchises.flatMap((f) => [
+            f.number,
+            f.toda_name,
+            f.franchise_type,
+            f.status,
+          ]),
+          ...vehicles.flatMap((v) => [
+            v.plateNo,
+            v.motor,
+            v.modelMake,
+            v.engine,
+            v.chassis,
+            v.status,
+          ]),
         ]
           .join(" ")
           .toLowerCase()
@@ -256,23 +426,69 @@ export default function Profiles() {
   }
 
   function handleAddClick() {
-    if (tab === "Enforcer") setShowEnforcerModal(true);
-    else setShowDriverModal(true);
+    if (tab === "Enforcer") {
+      setShowEnforcerModal(true);
+      return;
+    }
+
+    setShowDriverModal(true);
   }
 
-  function handleDriverSubmit(payload) {
-    const newDriver = {
-      id: makeId("d"),
-      role: payload.role || "Driver",
-      ...payload,
-    };
+  async function handleDriverSubmit(payload) {
+    try {
+      setError("");
 
-    setDrivers((prev) => [newDriver, ...prev]);
+      const requestBody = payload;
+
+      const response = await apiRequest("/drivers", {
+        method: "POST",
+        body: JSON.stringify(requestBody),
+      });
+
+      setShowDriverModal(false);
+
+      const newDriverId =
+        response?.data?.id ||
+        response?.id;
+
+      if (newDriverId) {
+        nav(`/profiles/${newDriverId}`);
+        return;
+      }
+
+      await fetchDrivers();
+    } catch (err) {
+      setError(err.message || "Failed to create driver");
+    }
   }
 
-  function handleEnforcerSubmit(payload) {
-    const newEnforcer = { id: makeId("e"), ...payload };
-    setEnforcers((prev) => [newEnforcer, ...prev]);
+  async function handleEnforcerSubmit(payload) {
+    try {
+      setError("");
+
+      const nameParts = splitFullName(payload.name);
+
+      const requestBody = {
+        first_name: nameParts.first_name,
+        middle_name: nameParts.middle_name,
+        last_name: nameParts.last_name,
+        suffix: null,
+        contact_number: payload.contact || null,
+        address: payload.address || null,
+        photo_url: payload.photoUrl || null,
+        status: "ACTIVE",
+      };
+
+      await apiRequest("/enforcers", {
+        method: "POST",
+        body: JSON.stringify(requestBody),
+      });
+
+      setShowEnforcerModal(false);
+      await fetchEnforcers();
+    } catch (err) {
+      setError(err.message || "Failed to create enforcer");
+    }
   }
 
   function goToProfile(id) {
@@ -284,12 +500,16 @@ export default function Profiles() {
     nav(`/profiles/${id}/transactions`);
   }
 
-  function handleExportExcel() {
-    exportProfilesToExcel({
-      drivers: exportDrivers,
-      enforcers,
-      activeTab: tab,
-    });
+  async function handleExportExcel() {
+    try {
+      await exportProfilesToExcel({
+        drivers: exportDrivers,
+        enforcers,
+        activeTab: tab,
+      });
+    } catch (err) {
+      setError(err.message || "Failed to export Excel");
+    }
   }
 
   const headerButtonClass = (active) =>
@@ -360,6 +580,18 @@ export default function Profiles() {
           </button>
         ))}
       </div>
+
+      {error && (
+        <div className="alert alert-danger rounded-4 py-2">
+          {error}
+        </div>
+      )}
+
+      {loading && (
+        <div className="alert alert-info rounded-4 py-2">
+          Loading records...
+        </div>
+      )}
 
       <div className="row g-3 mx-0">
         <div className="col-12">
@@ -439,8 +671,8 @@ export default function Profiles() {
                       ))}
 
                     {tab !== "Enforcer" &&
-                      rows.map(({ rowId, driver, franchise }) => {
-                        const franchiseNo = franchise?.number || driver.franchiseNo || "—";
+                      rows.map(({ rowId, driver }) => {
+                        const franchiseSummary = getDriverFranchiseSummary(driver);
 
                         return (
                           <tr key={rowId}>
@@ -468,10 +700,24 @@ export default function Profiles() {
 
                             {tab !== "Colorum" && (
                               <td>
-                                <div>{driver.toda || "—"}</div>
-                                <div className="small text-muted">
-                                  Franchise: {franchiseNo}
-                                </div>
+                                {franchiseSummary.visible.length === 0 ? (
+                                  <div>—</div>
+                                ) : (
+                                  <div className="d-flex flex-column gap-1">
+                                    {franchiseSummary.visible.map((franchise) => (
+                                      <div key={franchise.id}>
+                                        <div>{franchise.toda_name || "—"}</div>
+                                        <div className="small text-muted">
+                                          Franchise: {franchise.number || "—"}
+                                        </div>
+                                      </div>
+                                    ))}
+
+                                    {franchiseSummary.hasMore && (
+                                      <div className="small text-muted">...</div>
+                                    )}
+                                  </div>
+                                )}
                               </td>
                             )}
 
@@ -508,7 +754,7 @@ export default function Profiles() {
                           }
                           className="text-center text-muted py-5"
                         >
-                          No results.
+                          {loading ? "Loading..." : "No results."}
                         </td>
                       </tr>
                     )}

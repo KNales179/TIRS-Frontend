@@ -1,3 +1,4 @@
+//pages/Login.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { login } from "../data/auth";
@@ -14,15 +15,32 @@ export default function Login() {
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
+
     setError("");
 
-    // frontend-only demo auth
-    const ok = login(username.trim(), password, remember);
-    if (!ok) return setError("Invalid username or password.");
+    const result = await login(
+      username.trim(),
+      password,
+      remember
+    );
 
-    navigate("/dashboard", { replace: true });
+    if (!result.success) {
+      return setError(result.message || "Login failed");
+    }
+
+    if (result.mustChangePassword) {
+      navigate("/first-login", {
+        replace: true,
+      });
+
+      return;
+    }
+
+    navigate("/dashboard", {
+      replace: true,
+    });
   }
 
   return (
@@ -97,15 +115,7 @@ export default function Login() {
                 </button>
 
                 <div className="text-center mt-3 small text-muted">
-                  Don’t have account yet?{" "}
-                  <a className="auth-link" href="#!" onClick={(e) => e.preventDefault()}>
-                    New Account
-                  </a>
-                </div>
-
-                {/* demo hint */}
-                <div className="text-center mt-3 small text-muted">
-                  Demo: <b>admin</b> / <b>admin123</b>
+                  Authorized TFRO Personnel Only
                 </div>
               </form>
             </div>

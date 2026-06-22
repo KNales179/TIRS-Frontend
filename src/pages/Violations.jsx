@@ -1,5 +1,48 @@
-import { useMemo, useState } from "react";
-import { useTFROData } from "../context/TFRODataContext";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { getToken } from "../data/auth";
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+function TruncatedText({ value, maxWidth = 260 }) {
+  return (
+    <span
+      title={value || "—"}
+      style={{
+        display: "block",
+        width: "100%",
+        maxWidth,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        verticalAlign: "middle",
+      }}
+    >
+      {value || "—"}
+    </span>
+  );
+}
+
+async function apiRequest(path, options = {}) {
+  const token = getToken();
+
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(data?.message || "Request failed");
+  }
+
+  return data;
+}
 
 function money(n) {
   return new Intl.NumberFormat("en-PH", {
@@ -8,302 +51,637 @@ function money(n) {
   }).format(Number(n || 0));
 }
 
-function deriveStatus(v) {
-  if (v?.status) return v.status;
-  if (!v?.datePaid) return "New";
-  return "On Process";
+function todayDateTimeLocal() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset();
+  const local = new Date(now.getTime() - offset * 60000);
+  return local.toISOString().slice(0, 16);
 }
 
-function formatDateInput(value) {
-  const digits = String(value || "")
-    .replace(/\D/g, "")
-    .slice(0, 8);
+function displayStatus(status) {
+  const s = String(status || "NEW").toUpperCase();
 
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+  if (s === "ON_PROCESS") return "On Process";
+  if (s === "DONE") return "Done";
+  if (s === "PAID") return "Paid";
+  if (s === "SETTLED") return "Settled";
+  if (s === "CANCELLED") return "Cancelled";
+  if (s === "DISPUTED") return "Disputed";
+
+  return "New";
 }
 
-function getEmptyViolationForm() {
+function fullName(person) {
+  return [
+    person?.first_name,
+    person?.middle_name,
+    person?.last_name,
+    person?.suffix,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function normalizeDriver(driver) {
   return {
-    ticketNo: "",
-    violationCode: "",
-    violation: "",
-    violationGroup: "",
-    offenseLevel: "",
-    violationDate: "",
-    driverName: "",
-    classification: "Colorum",
-    officialPenalty: "",
-    declaredPenalty: "",
-    discount: "",
-    payableAmount: "",
+    ...driver,
+    name: fullName(driver),
+    vehicles: driver.vehicles || [],
+  };
+}
+
+function normalizeEnforcer(enforcer) {
+  return {
+    ...enforcer,
+    name: fullName(enforcer),
+  };
+}
+
+function hasVehicleFranchise(vehicle) {
+  return Boolean(
+    vehicle?.franchise_id ||
+      vehicle?.franchiseId ||
+      vehicle?.franchise?.id ||
+      vehicle?.franchise_number ||
+      vehicle?.franchiseNo ||
+      vehicle?.franchise
+  );
+}
+
+function normalizeRow(item) {
+  const violations = item.violations || [];
+  const enforcers = item.enforcers || [];
+  const processors = item.processors || [];
+  const transactions = item.transactions || [];
+
+  const latestPayment =
+    transactions.find((t) => t.action_taken === "PAYMENT_RECORDED") ||
+    transactions[0] ||
+    null;
+
+  return {
+    id: item.id,
+    ticketNo: item.ticket_number || item.ticketNo || "—",
+    violationCode:
+      violations.map((v) => v.violation_code).filter(Boolean).join(", ") ||
+      item.violation_code ||
+      "—",
+    violation:
+      violations.map((v) => v.name).filter(Boolean).join(", ") ||
+      item.violation ||
+      "—",
+    violationDate: item.apprehension_date
+      ? String(item.apprehension_date).slice(0, 10)
+      : "—",
+    driverName:
+      item.driver_name || item.unregistered_name || item.driverName || "—",
+    classification:
+      item.classification || item.violator_type || item.classification || "—",
+    officialPenalty: item.total_penalty || item.penaltyAmount || 0,
+    datePaid:
+      latestPayment?.paid_at || item.datePaid || item.paid_at || null,
+    orNumber:
+      latestPayment?.or_number || item.orNumber || item.or_number || null,
+    enforcers:
+      enforcers.map((e) => e.enforcer_name || e.name).filter(Boolean).join(", ") ||
+      item.enforcers ||
+      "—",
+    processors:
+      processors.map((p) => p.admin_name).filter(Boolean).join(", ") || "None",
+    commissionRate: Number(item.commission_rate || 0),
+    status: displayStatus(item.status),
+    location: item.location || "",
+    raw: item,
+  };
+}
+
+function getEmptyApprehensionForm() {
+  return {
+    violator_type: "REGISTERED_DRIVER",
+    driver_id: "",
+    vehicle_id: "",
+    unregistered_name: "",
+    unregistered_contact: "",
+    unregistered_address: "",
+    apprehension_date: "",
     location: "",
-    datePaid: "",
-    orNumber: "",
-    enforcers: [""],
-    commissionRate: 0.2,
-    status: "New",
+    violation_type_ids: [],
+    enforcer_ids: [],
+    commission_rate: 0.2,
+    remarks: "",
+  };
+}
+
+function getEmptyPaymentForm(total = 0) {
+  return {
+    or_number: "",
+    amount_paid: total,
+    payment_method: "CASH",
+    paid_at: todayDateTimeLocal(),
+    remarks: "",
   };
 }
 
 export default function Violations() {
-  const {
-    violations: data,
-    setViolations: setData,
-    violationsMaster,
-    addViolation,
-  } = useTFROData();
+  const location = useLocation();
+  const openedFromDashboardRef = useRef(false);
+  const [apprehensions, setApprehensions] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [enforcers, setEnforcers] = useState([]);
+  const [violationTypes, setViolationTypes] = useState([]);
 
-  const [mode, setMode] = useState("Task");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [violationCodeFilter, setViolationCodeFilter] = useState("All");
-  const [violationFilter, setViolationFilter] = useState("All");
-  const [violationDateFilter, setViolationDateFilter] = useState("");
   const [classificationFilter, setClassificationFilter] = useState("All");
+  const [sortBy, setSortBy] = useState("Newest");
 
-  const [cols, setCols] = useState({
-    ticketNo: true,
-    violationCode: true,
-    violation: true,
-    violationDate: true,
-    driverName: true,
-    classification: true,
-    officialPenalty: true,
-    declaredPenalty: true,
-    discount: true,
-    datePaid: true,
-    orNumber: true,
-    enforcers: true,
-    commission: true,
-    status: true,
-  });
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   const [showFormModal, setShowFormModal] = useState(false);
-  const [formMode, setFormMode] = useState("add");
-  const [selectedRow, setSelectedRow] = useState(null);
-  const [formData, setFormData] = useState(getEmptyViolationForm());
+  const [formData, setFormData] = useState(getEmptyApprehensionForm());
+  const [editingRow, setEditingRow] = useState(null);
+
   const [viewRow, setViewRow] = useState(null);
 
-  const violationCodeOptions = useMemo(() => {
-    const masterCodes = violationsMaster.map((item) => item.code);
-    const existingCodes = data.map((item) => item.violationCode).filter(Boolean);
+  const [paymentRow, setPaymentRow] = useState(null);
+  const [paymentForm, setPaymentForm] = useState(getEmptyPaymentForm());
 
-    return ["All", ...new Set([...masterCodes, ...existingCodes])];
-  }, [data, violationsMaster]);
+  const [reasonModal, setReasonModal] = useState(null);
+  const [reasonText, setReasonText] = useState("");
 
-  const violationOptions = useMemo(() => {
-    const masterNames = violationsMaster.map((item) => item.name);
-    const existingNames = data.map((item) => item.violation).filter(Boolean);
+  const isEditing = !!editingRow;
 
-    return ["All", ...new Set([...masterNames, ...existingNames])];
-  }, [data, violationsMaster]);
+  async function fetchPageData() {
+    try {
+      setLoading(true);
+      setError("");
 
-  const classificationOptions = useMemo(() => {
-    return ["All", ...new Set(data.map((v) => v.classification).filter(Boolean))];
-  }, [data]);
+      const [apprehensionRes, driverRes, enforcerRes, violationTypeRes] =
+        await Promise.all([
+          apiRequest("/apprehensions"),
+          apiRequest("/drivers"),
+          apiRequest("/enforcers"),
+          apiRequest("/violation-types"),
+        ]);
+
+      setApprehensions((apprehensionRes.data || []).map(normalizeRow));
+      setDrivers((driverRes.data || driverRes.drivers || []).map(normalizeDriver));
+      setEnforcers(
+        (enforcerRes.data || enforcerRes.enforcers || []).map(normalizeEnforcer)
+      );
+      setViolationTypes(violationTypeRes.data || []);
+    } catch (err) {
+      setError(err.message || "Failed to load violations");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchPageData();
+  }, []);
+
+  useEffect(() => {
+    const requestedId = location.state?.viewApprehensionId;
+
+    if (!requestedId || openedFromDashboardRef.current || apprehensions.length === 0) {
+      return;
+    }
+
+    const matchedRow = apprehensions.find((row) => {
+      return (
+        String(row.id) === String(requestedId) ||
+        String(row.ticketNo) === String(requestedId) ||
+        String(row.raw?.apprehension_code || "") === String(requestedId) ||
+        String(row.raw?.ticket_number || "") === String(requestedId)
+      );
+    });
+
+    if (matchedRow) {
+      openedFromDashboardRef.current = true;
+      setViewRow(matchedRow);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state, apprehensions]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
 
-    let list = !q
-      ? data
-      : data.filter((v) =>
-          [
-            v.ticketNo,
-            v.violationCode,
-            v.violation,
-            v.violationGroup,
-            v.driverName,
-            v.classification,
-            v.orNumber,
-            v.enforcers,
-            v.location,
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(q)
-        );
+    let list = apprehensions.filter((v) => {
+      if (!q) return true;
+
+      return [
+        v.ticketNo,
+        v.violationCode,
+        v.violation,
+        v.driverName,
+        v.classification,
+        v.orNumber,
+        v.enforcers,
+        v.processors,
+        v.location,
+        v.status,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(q);
+    });
 
     if (statusFilter !== "All") {
-      list = list.filter((v) => deriveStatus(v) === statusFilter);
-    }
-
-    if (violationCodeFilter !== "All") {
-      list = list.filter((v) => v.violationCode === violationCodeFilter);
-    }
-
-    if (violationFilter !== "All") {
-      list = list.filter((v) => v.violation === violationFilter);
+      list = list.filter((v) => v.status === statusFilter);
     }
 
     if (classificationFilter !== "All") {
       list = list.filter((v) => v.classification === classificationFilter);
     }
 
-    if (violationDateFilter.trim()) {
-      list = list.filter((v) => v.violationDate === violationDateFilter.trim());
-    }
+    const sorted = [...list];
 
-    return list;
-  }, [
-    data,
-    query,
-    statusFilter,
-    violationCodeFilter,
-    violationFilter,
-    violationDateFilter,
-    classificationFilter,
-  ]);
+    sorted.sort((a, b) => {
+      const dateA = new Date(a.raw?.apprehension_date || a.violationDate || 0).getTime();
+      const dateB = new Date(b.raw?.apprehension_date || b.violationDate || 0).getTime();
+
+      if (sortBy === "Oldest") return dateA - dateB;
+      if (sortBy === "Penalty High-Low") {
+        return Number(b.officialPenalty || 0) - Number(a.officialPenalty || 0);
+      }
+      if (sortBy === "Penalty Low-High") {
+        return Number(a.officialPenalty || 0) - Number(b.officialPenalty || 0);
+      }
+      if (sortBy === "Ticket Number") {
+        return String(a.ticketNo || "").localeCompare(String(b.ticketNo || ""));
+      }
+
+      return dateB - dateA;
+    });
+
+    return sorted;
+  }, [apprehensions, query, statusFilter, classificationFilter, sortBy]);
 
   const grouped = useMemo(() => {
-    const g = { New: [], "On Process": [], Done: [] };
-    data.forEach((v) => {
-      const s = deriveStatus(v);
-      if (g[s]) g[s].push(v);
+    const g = {
+      New: [],
+      "On Process": [],
+      Paid: [],
+      Settled: [],
+      Cancelled: [],
+      Disputed: [],
+      Done: [],
+    };
+
+    apprehensions.forEach((v) => {
+      if (g[v.status]) g[v.status].push(v);
     });
+
     return g;
-  }, [data]);
+  }, [apprehensions]);
 
-  const headerButtonClass = (active) =>
-    `btn ${active ? "btn-primary" : "btn-outline-primary"} rounded-3 px-3`;
+  const classificationOptions = useMemo(() => {
+    return [
+      "All",
+      ...new Set(apprehensions.map((v) => v.classification).filter(Boolean)),
+    ];
+  }, [apprehensions]);
 
-  function jumpToStatus(status) {
-    setMode("Show All");
-    setStatusFilter(status);
+  const statusCards = useMemo(() => {
+    return [
+      { label: "All", value: "All", count: apprehensions.length },
+      { label: "New", value: "New", count: grouped.New.length },
+      {
+        label: "On Process",
+        value: "On Process",
+        count: grouped["On Process"].length,
+      },
+      { label: "Paid", value: "Paid", count: grouped.Paid.length },
+      { label: "Settled", value: "Settled", count: grouped.Settled.length },
+      { label: "Cancelled", value: "Cancelled", count: grouped.Cancelled.length },
+      { label: "Disputed", value: "Disputed", count: grouped.Disputed.length },
+    ];
+  }, [apprehensions.length, grouped]);
+
+  const myProcessingRows = useMemo(() => {
+    return apprehensions.filter((row) => {
+      const processors = row.raw?.processors || [];
+      return processors.length > 0 && ["On Process", "Paid"].includes(row.status);
+    });
+  }, [apprehensions]);
+
+  function clearAllFilters() {
+    setStatusFilter("All");
+    setClassificationFilter("All");
+    setSortBy("Newest");
   }
 
-  function handleAddViolation() {
-    setFormMode("add");
-    setSelectedRow(null);
-    setFormData(getEmptyViolationForm());
+  function handleOpenAddModal() {
+    setEditingRow(null);
+    setFormData(getEmptyApprehensionForm());
     setShowFormModal(true);
   }
 
-  function handleEdit(v) {
-    const officialPenalty =
-      v.officialPenalty ?? v.penaltyAmount ?? v.totalAmount ?? 0;
-    const declaredPenalty =
-      v.declaredPenalty ?? v.payableAmount ?? v.totalAmount ?? 0;
+  function handleOpenEditModal(row) {
+    const raw = row.raw || row;
 
-    setFormMode("edit");
-    setSelectedRow(v);
+    setEditingRow(row);
+
     setFormData({
-      ...getEmptyViolationForm(),
-      ...v,
-      officialPenalty,
-      declaredPenalty,
-      discount: Math.max(Number(officialPenalty) - Number(declaredPenalty), 0),
-      payableAmount: declaredPenalty,
-      commissionRate: v.commissionRate || 0.2,
-      datePaid: v.datePaid || "",
-      orNumber: v.orNumber || "",
-      enforcers: v.enforcers
-        ? String(v.enforcers)
-            .split(",")
-            .map((name) => name.trim())
-            .filter(Boolean)
-        : [""],
+      violator_type: raw.violator_type || "REGISTERED_DRIVER",
+      driver_id: raw.driver_id || "",
+      vehicle_id: raw.vehicle_id || "",
+      unregistered_name: raw.unregistered_name || "",
+      unregistered_contact: raw.unregistered_contact || "",
+      unregistered_address: raw.unregistered_address || "",
+      apprehension_date: raw.apprehension_date
+        ? String(raw.apprehension_date).slice(0, 16)
+        : "",
+      location: raw.location || "",
+      violation_type_ids: (raw.violations || []).map(
+        (v) => v.violation_type_id || v.id
+      ),
+      enforcer_ids: (raw.enforcers || []).map((e) => e.enforcer_id || e.id),
+      commission_rate: raw.commission_rate || 0.2,
+      remarks: raw.remarks || "",
     });
+
     setShowFormModal(true);
   }
 
   function handleCloseFormModal() {
     setShowFormModal(false);
-    setSelectedRow(null);
-    setFormData(getEmptyViolationForm());
+    setEditingRow(null);
+    setFormData(getEmptyApprehensionForm());
   }
 
-  function handleSaveForm() {
-    if (
-      !formData.ticketNo.trim() ||
-      !formData.violationCode.trim() ||
-      !formData.violation.trim() ||
-      !formData.violationDate.trim() ||
-      !formData.driverName.trim()
-    ) {
-      alert("Please fill in Ticket No., Violation, Violation Date, and Driver’s Name.");
-      return;
-    }
+  function buildPayload() {
+    const selectedDriver = drivers.find(
+      (driver) => Number(driver.id) === Number(formData.driver_id)
+    );
 
-    if (!formData.enforcers[0]?.trim()) {
-      alert("Please enter at least one enforcer.");
-      return;
-    }
+    const selectedVehicle = selectedDriver?.vehicles?.find(
+      (vehicle) => Number(vehicle.id) === Number(formData.vehicle_id)
+    );
 
-    const officialPenalty = Number(formData.officialPenalty || 0);
-    const declaredPenalty = Number(formData.declaredPenalty || 0);
-    const discount = Math.max(officialPenalty - declaredPenalty, 0);
+    const resolvedViolatorType =
+      formData.violator_type === "UNREGISTERED_PERSON"
+        ? "UNREGISTERED_PERSON"
+        : selectedVehicle
+        ? hasVehicleFranchise(selectedVehicle)
+          ? "REGISTERED_DRIVER"
+          : "COLORUM"
+        : formData.violator_type;
 
-    const payload = {
-      ...formData,
-      enforcers: formData.enforcers
-        .map((name) => name.trim())
-        .filter(Boolean)
-        .join(", "),
-      officialPenalty,
-      declaredPenalty,
-      discount,
-      payableAmount: declaredPenalty,
-      penaltyAmount: officialPenalty,
-      totalAmount: officialPenalty,
-      commissionRate: Number(formData.commissionRate || 0),
-      offenseLevel: Number(formData.offenseLevel || 0),
-      datePaid: formData.datePaid || null,
-      orNumber: formData.orNumber || null,
-      status: formData.status || "New",
+    return {
+      violator_type: resolvedViolatorType,
+      driver_id:
+        formData.violator_type === "UNREGISTERED_PERSON"
+          ? null
+          : Number(formData.driver_id),
+      vehicle_id: formData.vehicle_id ? Number(formData.vehicle_id) : null,
+
+      unregistered_name:
+        formData.violator_type === "UNREGISTERED_PERSON"
+          ? formData.unregistered_name
+          : null,
+      unregistered_contact:
+        formData.violator_type === "UNREGISTERED_PERSON"
+          ? formData.unregistered_contact
+          : null,
+      unregistered_address:
+        formData.violator_type === "UNREGISTERED_PERSON"
+          ? formData.unregistered_address
+          : null,
+
+      apprehension_date: formData.apprehension_date,
+      location: formData.location,
+      violation_type_ids: formData.violation_type_ids.map(Number),
+      enforcer_ids: formData.enforcer_ids.map(Number),
+      commission_rate: Number(formData.commission_rate || 0),
+      remarks: formData.remarks || null,
     };
+  }
 
-    if (formMode === "add") {
-      const alreadyExists = data.some(
-        (item) => String(item.ticketNo) === String(payload.ticketNo)
-      );
+  function validateForm() {
+    if (!formData.apprehension_date) {
+      alert("Please select apprehension date.");
+      return false;
+    }
 
-      if (alreadyExists) {
-        alert("Ticket number already exists.");
+    if (!formData.location.trim()) {
+      alert("Please enter location.");
+      return false;
+    }
+
+    if (formData.violator_type === "UNREGISTERED_PERSON") {
+      if (!formData.unregistered_name.trim()) {
+        alert("Please enter unregistered violator name.");
+        return false;
+      }
+    } else if (!formData.driver_id) {
+      alert("Please select driver/colorum profile.");
+      return false;
+    }
+
+    if (!formData.violation_type_ids.length) {
+      alert("Please select at least one violation.");
+      return false;
+    }
+
+    if (!formData.enforcer_ids.length) {
+      alert("Please select at least one enforcer.");
+      return false;
+    }
+
+    return true;
+  }
+
+  async function handleSaveApprehension() {
+    try {
+      setSaving(true);
+      setError("");
+
+      if (!validateForm()) return;
+
+      const payload = buildPayload();
+
+      const endpoint = isEditing
+        ? `/apprehensions/${editingRow.id}`
+        : "/apprehensions";
+
+      await apiRequest(endpoint, {
+        method: isEditing ? "PUT" : "POST",
+        body: JSON.stringify(payload),
+      });
+
+      await fetchPageData();
+      handleCloseFormModal();
+      alert(isEditing ? "Apprehension updated successfully." : "Apprehension saved successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to save apprehension");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleStartProcessing(row) {
+    try {
+      setSaving(true);
+      setError("");
+
+      const res = await apiRequest(`/apprehensions/${row.id}/start-processing`, {
+        method: "PUT",
+        body: JSON.stringify({
+          notes: "Started processing from Violations page.",
+        }),
+      });
+
+      await fetchPageData();
+      setViewRow(normalizeRow(res.data));
+      alert("Processing started.");
+    } catch (err) {
+      setError(err.message || "Failed to start processing");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleOpenPayment(row) {
+    setPaymentRow(row);
+    setPaymentForm(getEmptyPaymentForm(row.officialPenalty));
+  }
+
+  function handleClosePayment() {
+    setPaymentRow(null);
+    setPaymentForm(getEmptyPaymentForm());
+  }
+
+  async function handleRecordPayment() {
+    try {
+      setSaving(true);
+      setError("");
+
+      if (!paymentForm.or_number.trim()) {
+        alert("OR Number is required.");
         return;
       }
 
-      addViolation(payload);
-    } else {
-      setData((prev) =>
-        prev.map((item) =>
-          item.ticketNo === selectedRow.ticketNo ? payload : item
-        )
-      );
-
-      if (viewRow && viewRow.ticketNo === selectedRow.ticketNo) {
-        setViewRow(payload);
+      if (Number(paymentForm.amount_paid || 0) <= 0) {
+        alert("Amount paid must be greater than 0.");
+        return;
       }
-    }
 
-    handleCloseFormModal();
-  }
+      await apiRequest(`/apprehensions/${paymentRow.id}/payment`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...paymentForm,
+          amount_paid: Number(paymentForm.amount_paid || 0),
+        }),
+      });
 
-  function handlePrint(v) {
-    window.print();
-  }
-
-  function handleDelete(v) {
-    const ok = window.confirm(
-      `Delete violation record ${v.ticketNo}? This cannot be undone.`
-    );
-    if (!ok) return;
-
-    setData((prev) => prev.filter((item) => item.ticketNo !== v.ticketNo));
-
-    if (viewRow?.ticketNo === v.ticketNo) {
+      await fetchPageData();
+      handleClosePayment();
       setViewRow(null);
+      alert("Payment recorded successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to record payment");
+    } finally {
+      setSaving(false);
     }
   }
 
-  function clearAllFilters() {
-    setStatusFilter("All");
-    setViolationCodeFilter("All");
-    setViolationFilter("All");
-    setViolationDateFilter("");
-    setClassificationFilter("All");
+  async function handleSettle(row) {
+    if (!confirm("Settle this apprehension?")) return;
+
+    try {
+      setSaving(true);
+      setError("");
+
+      await apiRequest(`/apprehensions/${row.id}/settle`, {
+        method: "PUT",
+        body: JSON.stringify({
+          release_vehicle: true,
+          remarks: "Settled from Violations page.",
+        }),
+      });
+
+      await fetchPageData();
+      setViewRow(null);
+      alert("Apprehension settled successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to settle apprehension");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleImpound(row) {
+    if (!confirm("Mark connected vehicle as impounded?")) return;
+
+    try {
+      setSaving(true);
+      setError("");
+
+      await apiRequest(`/apprehensions/${row.id}/impound`, {
+        method: "PUT",
+        body: JSON.stringify({
+          remarks: "Marked impounded from Violations page.",
+        }),
+      });
+
+      await fetchPageData();
+      alert("Vehicle marked as impounded.");
+    } catch (err) {
+      setError(err.message || "Failed to impound vehicle");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openReasonModal(type, row) {
+    setReasonModal({ type, row });
+    setReasonText("");
+  }
+
+  function closeReasonModal() {
+    setReasonModal(null);
+    setReasonText("");
+  }
+
+  async function handleSubmitReasonAction() {
+    try {
+      setSaving(true);
+      setError("");
+
+      if (!reasonText.trim()) {
+        alert("Reason is required.");
+        return;
+      }
+
+      const endpoint =
+        reasonModal.type === "cancel"
+          ? `/apprehensions/${reasonModal.row.id}/cancel`
+          : `/apprehensions/${reasonModal.row.id}/dispute`;
+
+      await apiRequest(endpoint, {
+        method: "PUT",
+        body: JSON.stringify({
+          reason: reasonText,
+        }),
+      });
+
+      await fetchPageData();
+      closeReasonModal();
+      setViewRow(null);
+      alert(
+        reasonModal.type === "cancel"
+          ? "Apprehension cancelled."
+          : "Apprehension marked as disputed."
+      );
+    } catch (err) {
+      setError(err.message || "Action failed");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -326,7 +704,7 @@ export default function Violations() {
 
           <button
             className="btn btn-primary rounded-4 px-4"
-            onClick={handleAddViolation}
+            onClick={handleOpenAddModal}
             type="button"
           >
             + Add Violator
@@ -334,182 +712,165 @@ export default function Violations() {
         </div>
       </div>
 
-      <div className="d-flex gap-2 mb-3">
-        <button
-          className={headerButtonClass(mode === "Task")}
-          onClick={() => {
-            setMode("Task");
-            clearAllFilters();
-          }}
-          type="button"
-        >
-          Task
-        </button>
-
-        <button
-          className={headerButtonClass(mode === "Show All")}
-          onClick={() => setMode("Show All")}
-          type="button"
-        >
-          Show All
-        </button>
-      </div>
-
-      {mode === "Task" ? (
-        <div className="d-grid gap-4">
-          <TaskSection
-            title="New"
-            count={grouped["New"].length}
-            rows={grouped["New"]}
-            onSeeMore={() => jumpToStatus("New")}
-            onView={setViewRow}
-            onPrint={handlePrint}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
-
-          <TaskSection
-            title="On Process"
-            count={grouped["On Process"].length}
-            rows={grouped["On Process"]}
-            onSeeMore={() => jumpToStatus("On Process")}
-            onView={setViewRow}
-            onPrint={handlePrint}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
-
-          <TaskSection
-            title="Done"
-            count={grouped["Done"].length}
-            rows={grouped["Done"]}
-            onSeeMore={() => jumpToStatus("Done")}
-            onView={setViewRow}
-            onPrint={handlePrint}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
-        </div>
-      ) : (
-        <div className="row g-3 mx-0">
-          <div className="col-12">
-            <div className="card rounded-4 shadow-sm border-0">
-              <div className="card-body">
-                <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-                  <div className="d-flex flex-wrap align-items-end gap-2">
-                    <FilterSelect
-                      label="Status"
-                      value={statusFilter}
-                      onChange={setStatusFilter}
-                      options={["All", "New", "On Process", "Done"]}
-                      width={150}
-                    />
-
-                    <FilterSelect
-                      label="Code"
-                      value={violationCodeFilter}
-                      onChange={setViolationCodeFilter}
-                      options={violationCodeOptions}
-                      width={130}
-                    />
-
-                    <FilterSelect
-                      label="Violation"
-                      value={violationFilter}
-                      onChange={setViolationFilter}
-                      options={violationOptions}
-                      width={240}
-                    />
-
-                    <div>
-                      <span className="text-muted small d-block mb-1">
-                        Violation Date
-                      </span>
-                      <input
-                        className="form-control form-control-sm"
-                        style={{ width: 150 }}
-                        placeholder="MM/DD/YYYY"
-                        value={violationDateFilter}
-                        onChange={(e) =>
-                          setViolationDateFilter(formatDateInput(e.target.value))
-                        }
-                      />
-                    </div>
-
-                    <FilterSelect
-                      label="Classification"
-                      value={classificationFilter}
-                      onChange={setClassificationFilter}
-                      options={classificationOptions}
-                      width={160}
-                    />
-
-                    {(statusFilter !== "All" ||
-                      violationCodeFilter !== "All" ||
-                      violationFilter !== "All" ||
-                      classificationFilter !== "All" ||
-                      violationDateFilter) && (
-                      <button
-                        className="btn btn-sm btn-light"
-                        type="button"
-                        onClick={clearAllFilters}
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="dropdown">
-                    <button
-                      className="btn btn-light btn-sm rounded-3 d-flex align-items-center gap-1"
-                      data-bs-toggle="dropdown"
-                      type="button"
-                    >
-                      <i className="bi bi-sliders"></i>
-                      Columns
-                    </button>
-
-                    <div className="dropdown-menu p-3" style={{ minWidth: 250 }}>
-                      {Object.keys(cols).map((key) => (
-                        <FilterCheck
-                          key={key}
-                          label={key}
-                          checked={cols[key]}
-                          onChange={(v) => setCols((c) => ({ ...c, [key]: v }))}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <ViolationTable
-                  rows={rows}
-                  cols={cols}
-                  onView={setViewRow}
-                  onPrint={handlePrint}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                />
-              </div>
-            </div>
-          </div>
+      {error && <div className="alert alert-danger rounded-4 py-2">{error}</div>}
+      {loading && (
+        <div className="alert alert-info rounded-4 py-2">
+          Loading violations...
         </div>
       )}
 
-      <ViolationFormModal
+      <div className="row g-3 mb-4">
+        {statusCards.map((card) => (
+          <StatusSummaryCard
+            key={card.value}
+            label={card.label}
+            count={card.count}
+            active={statusFilter === card.value}
+            onClick={() => setStatusFilter(card.value)}
+          />
+        ))}
+      </div>
+
+      <div className="card rounded-4 shadow-sm border-0 mb-4">
+        <div className="card-body">
+          <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div>
+              <h2 className="h6 fw-bold mb-1">My Processing Records</h2>
+              <div className="text-muted small">
+                Apprehensions currently assigned for processing.
+              </div>
+            </div>
+
+            <span className="badge bg-info-subtle text-info-emphasis rounded-pill px-3 py-2">
+              {myProcessingRows.length} active
+            </span>
+          </div>
+
+          <ViolationTable
+            rows={myProcessingRows}
+            onView={setViewRow}
+            onEdit={handleOpenEditModal}
+          />
+        </div>
+      </div>
+
+      <div className="card rounded-4 shadow-sm border-0">
+        <div className="card-body">
+          <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div>
+              <h2 className="h6 fw-bold mb-1">All Apprehensions</h2>
+              <div className="text-muted small">
+                Search, filter, and sort all apprehension records.
+              </div>
+            </div>
+
+            {(statusFilter !== "All" ||
+              classificationFilter !== "All" ||
+              sortBy !== "Newest") && (
+              <button
+                className="btn btn-sm btn-light rounded-4 px-3"
+                type="button"
+                onClick={clearAllFilters}
+              >
+                Clear Filters
+              </button>
+            )}
+          </div>
+
+          <div className="d-flex flex-wrap align-items-end gap-2 mb-3">
+            <FilterSelect
+              label="Status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                "All",
+                "New",
+                "On Process",
+                "Paid",
+                "Settled",
+                "Cancelled",
+                "Disputed",
+              ]}
+              width={150}
+            />
+
+            <FilterSelect
+              label="Classification"
+              value={classificationFilter}
+              onChange={setClassificationFilter}
+              options={classificationOptions}
+              width={190}
+            />
+
+            <FilterSelect
+              label="Sort"
+              value={sortBy}
+              onChange={setSortBy}
+              options={[
+                "Newest",
+                "Oldest",
+                "Penalty High-Low",
+                "Penalty Low-High",
+                "Ticket Number",
+              ]}
+              width={190}
+            />
+          </div>
+
+          <ViolationTable
+            rows={rows}
+            onView={setViewRow}
+            onEdit={handleOpenEditModal}
+          />
+        </div>
+      </div>
+
+      <ApprehensionFormModal
         show={showFormModal}
-        mode={formMode}
+        isEditing={isEditing}
         formData={formData}
         setFormData={setFormData}
-        violationsMaster={violationsMaster}
+        drivers={drivers}
+        enforcers={enforcers}
+        violationTypes={violationTypes}
         onClose={handleCloseFormModal}
-        onSave={handleSaveForm}
+        onSave={handleSaveApprehension}
+        saving={saving}
       />
 
       <ViolationViewModal
         show={!!viewRow}
         row={viewRow}
+        saving={saving}
         onClose={() => setViewRow(null)}
+        onEdit={handleOpenEditModal}
+        onStartProcessing={handleStartProcessing}
+        onOpenPayment={handleOpenPayment}
+        onSettle={handleSettle}
+        onImpound={handleImpound}
+        onCancel={(row) => openReasonModal("cancel", row)}
+        onDispute={(row) => openReasonModal("dispute", row)}
+      />
+
+      <PaymentModal
+        show={!!paymentRow}
+        row={paymentRow}
+        form={paymentForm}
+        setForm={setPaymentForm}
+        saving={saving}
+        onClose={handleClosePayment}
+        onSave={handleRecordPayment}
+      />
+
+      <ReasonModal
+        show={!!reasonModal}
+        type={reasonModal?.type}
+        row={reasonModal?.row}
+        value={reasonText}
+        onChange={setReasonText}
+        saving={saving}
+        onClose={closeReasonModal}
+        onSubmit={handleSubmitReasonAction}
       />
     </div>
   );
@@ -535,83 +896,148 @@ function FilterSelect({ label, value, onChange, options, width }) {
   );
 }
 
-function ViolationTable({ rows, cols, onView, onPrint, onEdit, onDelete }) {
+function StatusSummaryCard({ label, count, active, onClick }) {
+  return (
+    <div className="col-6 col-md-4 col-xl">
+      <button
+        type="button"
+        className={`card w-100 text-start rounded-4 border-0 shadow-sm ${
+          active ? "bg-primary text-white" : "bg-white"
+        }`}
+        onClick={onClick}
+        style={{ minHeight: 92 }}
+      >
+        <div className="card-body py-3">
+          <div className={`small mb-1 ${active ? "text-white-50" : "text-muted"}`}>
+            {label}
+          </div>
+          <div className="h4 fw-bold mb-0">{count}</div>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+
+function ViolationTable({ rows, onView, onEdit }) {
   return (
     <div className="table-responsive">
-      <table className="tfro-table">
+      <table
+        className="tfro-table"
+        style={{
+          tableLayout: "fixed",
+          width: "100%",
+          minWidth: 1580,
+        }}
+      >
+        <colgroup>
+          <col style={{ width: "135px" }} />
+          <col style={{ width: "100px" }} />
+          <col style={{ width: "250px" }} />
+          <col style={{ width: "100px" }} />
+          <col style={{ width: "150px" }} />
+          <col style={{ width: "135px" }} />
+          <col style={{ width: "100px" }} />
+          <col style={{ width: "100px" }} />
+          <col style={{ width: "90px" }} />
+          <col style={{ width: "135px" }} />
+          <col style={{ width: "80px" }} />
+          <col style={{ width: "90px" }} />
+        </colgroup>
+
         <thead>
           <tr className="text-muted small">
-            {cols.ticketNo && <th>Ticket No.</th>}
-            {cols.violationCode && <th>Code</th>}
-            {cols.violation && <th>Violation</th>}
-            {cols.violationDate && <th>Violation Date</th>}
-            {cols.driverName && <th>Driver’s Name</th>}
-            {cols.classification && <th>Classification</th>}
-            {cols.officialPenalty && <th>Official Penalty</th>}
-            {cols.declaredPenalty && <th>Declared Penalty</th>}
-            {cols.discount && <th>Auto Discount</th>}
-            {cols.datePaid && <th>Date Paid</th>}
-            {cols.orNumber && <th>OR Number</th>}
-            {cols.enforcers && <th>Enforcer(s)</th>}
-            {cols.commission && <th>Commission</th>}
-            {cols.status && <th>Status</th>}
+            <th>Ticket No.</th>
+            <th>Code</th>
+            <th>Violation</th>
+            <th>Violation Date</th>
+            <th>Driver’s Name</th>
+            <th>Classification</th>
+            <th>Official Penalty</th>
+            <th>Date Paid</th>
+            <th>OR Number</th>
+            <th>Enforcer(s)</th>
+            <th>Status</th>
             <th className="text-end">Actions</th>
           </tr>
         </thead>
 
         <tbody>
-          {rows.map((v) => {
-            const officialPenalty = v.officialPenalty ?? v.penaltyAmount ?? v.totalAmount ?? 0;
-            const declaredPenalty = v.declaredPenalty ?? v.payableAmount ?? v.totalAmount ?? 0;
-            const discount = Math.max(Number(officialPenalty) - Number(declaredPenalty), 0);
-            const commission = Number(declaredPenalty) * Number(v.commissionRate || 0);
-            const status = deriveStatus(v);
+          {rows.map((v) => (
+            <tr key={v.id || v.ticketNo}>
+              <td>
+                <TruncatedText value={v.ticketNo} maxWidth={115} />
+              </td>
 
-            return (
-              <tr key={v.ticketNo}>
-                {cols.ticketNo && <td>{v.ticketNo}</td>}
-                {cols.violationCode && <td>{v.violationCode || "—"}</td>}
-                {cols.violation && <td>{v.violation}</td>}
-                {cols.violationDate && <td>{v.violationDate}</td>}
-                {cols.driverName && <td>{v.driverName}</td>}
-                {cols.classification && <td>{v.classification}</td>}
-                {cols.officialPenalty && (
-                  <td className="text-danger fw-semibold">{money(officialPenalty)}</td>
-                )}
-                {cols.declaredPenalty && (
-                  <td className="text-success fw-semibold">{money(declaredPenalty)}</td>
-                )}
-                {cols.discount && <td>{money(discount)}</td>}
-                {cols.datePaid && (
-                  <td className="text-danger">{v.datePaid || "unavailable"}</td>
-                )}
-                {cols.orNumber && (
-                  <td className="text-danger">{v.orNumber || "—"}</td>
-                )}
-                {cols.enforcers && <td>{v.enforcers}</td>}
-                {cols.commission && <td>{money(commission)}</td>}
-                {cols.status && (
-                  <td>
-                    <StatusBadge status={status} />
-                  </td>
-                )}
+              <td>
+                <TruncatedText value={v.violationCode} maxWidth={115} />
+              </td>
 
-                <td className="text-end">
-                  <ActionButtons
-                    row={v}
-                    onView={onView}
-                    onPrint={onPrint}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                  />
-                </td>
-              </tr>
-            );
-          })}
+              <td>
+                <TruncatedText value={v.violation} maxWidth={260} />
+              </td>
+
+              <td>
+                <TruncatedText value={v.violationDate} maxWidth={115} />
+              </td>
+
+              <td>
+                <TruncatedText value={v.driverName} maxWidth={130} />
+              </td>
+
+              <td>
+                <TruncatedText value={v.classification} maxWidth={115} />
+              </td>
+
+              <td className="text-danger fw-semibold">
+                <TruncatedText value={money(v.officialPenalty)} maxWidth={115} />
+              </td>
+
+              <td className="text-danger">
+                <TruncatedText
+                  value={v.datePaid ? String(v.datePaid).slice(0, 10) : "unavailable"}
+                  maxWidth={115}
+                />
+              </td>
+
+              <td className="text-danger">
+                <TruncatedText value={v.orNumber || "—"} maxWidth={115} />
+              </td>
+
+              <td>
+                <TruncatedText value={v.enforcers} maxWidth={130} />
+              </td>
+
+              <td>
+                <StatusBadge status={v.status} />
+              </td>
+
+              <td className="text-end">
+                <button
+                  className="btn btn-sm btn-light rounded-circle"
+                  onClick={() => onView?.(v)}
+                  title="View"
+                  type="button"
+                >
+                  <i className="bi bi-eye" />
+                </button>
+
+                <button
+                  className="btn btn-sm btn-light rounded-circle ms-1"
+                  onClick={() => onEdit?.(v)}
+                  title="Edit"
+                  type="button"
+                  disabled={["Paid", "Settled", "Cancelled"].includes(v.status)}
+                >
+                  <i className="bi bi-pencil" />
+                </button>
+              </td>
+            </tr>
+          ))}
 
           {rows.length === 0 && (
             <tr>
-              <td colSpan={20} className="text-center text-muted py-5">
+              <td colSpan={12} className="text-center text-muted py-5">
                 No results.
               </td>
             </tr>
@@ -622,71 +1048,89 @@ function ViolationTable({ rows, cols, onView, onPrint, onEdit, onDelete }) {
   );
 }
 
-function TaskSection({ title, count, rows, onSeeMore, onView, onPrint, onEdit, onDelete }) {
-  return (
-    <div className="card rounded-4 shadow-sm border-0">
-      <div className="card-body">
-        <div className="d-flex align-items-center justify-content-between mb-3">
-          <div className="d-flex align-items-center gap-2">
-            <div className="fw-bold">{title}</div>
-            <span className="badge bg-danger-subtle text-danger-emphasis">
-              {count}
-            </span>
-          </div>
-
-          <a
-            href="#!"
-            onClick={(e) => {
-              e.preventDefault();
-              onSeeMore?.();
-            }}
-          >
-            See More
-          </a>
-        </div>
-
-        <ViolationTable
-          rows={rows.slice(0, 5)}
-          cols={{
-            ticketNo: true,
-            violationCode: true,
-            violation: true,
-            violationDate: true,
-            driverName: true,
-            classification: true,
-            officialPenalty: true,
-            declaredPenalty: true,
-            discount: true,
-            datePaid: true,
-            orNumber: true,
-            enforcers: false,
-            commission: false,
-            status: false,
-          }}
-          onView={onView}
-          onPrint={onPrint}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ViolationFormModal({
+function ApprehensionFormModal({
   show,
-  mode,
+  isEditing,
   formData,
   setFormData,
-  violationsMaster,
+  drivers,
+  enforcers,
+  violationTypes,
   onClose,
   onSave,
+  saving,
 }) {
+  const [driverSearch, setDriverSearch] = useState("");
+  const [enforcerSearch, setEnforcerSearch] = useState("");
+  const [violationSearch, setViolationSearch] = useState("");
+
   if (!show) return null;
 
-  const officialPenalty = Number(formData.officialPenalty || 0);
-  const declaredPenalty = Number(formData.declaredPenalty || 0);
-  const discount = Math.max(officialPenalty - declaredPenalty, 0);
+  const selectedDriver = drivers.find(
+    (driver) => Number(driver.id) === Number(formData.driver_id)
+  );
+
+  const availableVehicles = selectedDriver?.vehicles || [];
+
+  const selectedVehicle = availableVehicles.find(
+    (vehicle) => Number(vehicle.id) === Number(formData.vehicle_id)
+  );
+
+  const selectedViolationTypes = violationTypes.filter((item) =>
+    formData.violation_type_ids.map(Number).includes(Number(item.id))
+  );
+
+  const totalPenalty = selectedViolationTypes.reduce(
+    (sum, item) => sum + Number(item.penalty_amount || 0),
+    0
+  );
+
+  const systemClassification =
+    formData.violator_type === "UNREGISTERED_PERSON"
+      ? "UNREGISTERED_PERSON"
+      : selectedVehicle
+      ? hasVehicleFranchise(selectedVehicle)
+        ? "REGISTERED"
+        : "COLORUM"
+      : "Select vehicle to classify";
+
+  const driverResults = drivers.filter((driver) => {
+    const q = driverSearch.trim().toLowerCase();
+
+    if (!q) return true;
+
+    return [
+      driver.name,
+      driver.driver_code,
+      driver.classification,
+      driver.contact_number,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(q);
+  });
+
+  const enforcerResults = enforcers.filter((enforcer) => {
+    const q = enforcerSearch.trim().toLowerCase();
+
+    if (!q) return true;
+
+    return [enforcer.name, enforcer.enforcer_code, enforcer.contact_number]
+      .join(" ")
+      .toLowerCase()
+      .includes(q);
+  });
+
+  const violationResults = violationTypes.filter((item) => {
+    const q = violationSearch.trim().toLowerCase();
+
+    if (!q) return true;
+
+    return [item.violation_code, item.name, item.group_name]
+      .join(" ")
+      .toLowerCase()
+      .includes(q);
+  });
 
   function setField(key, value) {
     setFormData((prev) => ({
@@ -695,43 +1139,39 @@ function ViolationFormModal({
     }));
   }
 
-  function handleViolationChange(code) {
-    const selected = violationsMaster.find(
-      (item) => String(item.code) === String(code)
-    );
-
-    setFormData((prev) => ({
-      ...prev,
-      violationCode: selected?.code || "",
-      violation: selected?.name || "",
-      violationGroup: selected?.group || "",
-      offenseLevel: selected?.offenseLevel || "",
-      officialPenalty: selected?.penalty || "",
-      declaredPenalty: selected?.penalty || "",
-      discount: 0,
-      payableAmount: selected?.penalty || "",
-    }));
-  }
-
-  function setEnforcer(index, value) {
+  function toggleArrayValue(key, id) {
     setFormData((prev) => {
-      const next = [...prev.enforcers];
-      next[index] = value;
-      return { ...prev, enforcers: next };
+      const current = prev[key].map(Number);
+      const numericId = Number(id);
+
+      const next = current.includes(numericId)
+        ? current.filter((item) => item !== numericId)
+        : [...current, numericId];
+
+      return {
+        ...prev,
+        [key]: next,
+      };
     });
   }
 
-  function addEnforcer() {
+  function handleViolatorTypeChange(value) {
     setFormData((prev) => ({
       ...prev,
-      enforcers: [...prev.enforcers, ""],
+      violator_type: value,
+      driver_id: "",
+      vehicle_id: "",
+      unregistered_name: "",
+      unregistered_contact: "",
+      unregistered_address: "",
     }));
   }
 
-  function removeEnforcer(index) {
+  function handleDriverChange(driverId) {
     setFormData((prev) => ({
       ...prev,
-      enforcers: prev.enforcers.filter((_, i) => i !== index),
+      driver_id: driverId,
+      vehicle_id: "",
     }));
   }
 
@@ -739,181 +1179,367 @@ function ViolationFormModal({
     <>
       <div className="modal fade show d-block" tabIndex="-1">
         <div className="modal-dialog modal-dialog-centered modal-xl">
-          <div className="modal-content border-0 rounded-4 shadow">
-            <div className="modal-header border-0 pb-0">
+          <div
+            className="modal-content border-0 rounded-4 shadow-lg"
+            style={{ overflow: "hidden" }}
+          >
+            <div
+              className="modal-header border-0 pb-3"
+              style={{
+                background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)",
+              }}
+            >
               <div>
                 <h5 className="modal-title fw-bold">
-                  {mode === "add" ? "Add Violation" : "Edit Violation"}
+                  {isEditing ? "Edit Apprehension" : "Add Apprehension"}
                 </h5>
                 <div className="text-muted small">
-                  Official penalty is auto-filled from violation master list.
+                  Ticket number, penalties, and status are handled by the backend workflow.
                 </div>
               </div>
 
-              <button type="button" className="btn-close" onClick={onClose} />
+              <button
+                type="button"
+                className="btn-close"
+                onClick={onClose}
+                disabled={saving}
+              />
             </div>
 
-            <div className="modal-body">
-              <div className="row g-3">
-                <FormInput
-                  label="Ticket No."
-                  value={formData.ticketNo}
-                  onChange={(v) => setField("ticketNo", v)}
-                />
+            <div className="modal-body" style={{ background: "#f8fafc" }}>
+              <div className="row g-4">
+                <div className="col-12">
+                  <SectionBox title="Violator">
+                    <div className="d-flex flex-wrap gap-3 mb-3">
+                      <RadioOption
+                        label="Registered Driver"
+                        value="REGISTERED_DRIVER"
+                        checked={formData.violator_type === "REGISTERED_DRIVER"}
+                        onChange={handleViolatorTypeChange}
+                      />
 
-                <div className="col-md-6">
-                  <label className="form-label small text-muted">Violation</label>
-                  <select
-                    className="form-select rounded-4"
-                    value={formData.violationCode}
-                    onChange={(e) => handleViolationChange(e.target.value)}
-                  >
-                    <option value="">Select violation</option>
-                    {violationsMaster.map((item) => (
-                      <option key={item.code} value={item.code}>
-                        {item.code} - {item.name}
-                      </option>
-                    ))}
-                  </select>
+                      <RadioOption
+                        label="Colorum"
+                        value="COLORUM"
+                        checked={formData.violator_type === "COLORUM"}
+                        onChange={handleViolatorTypeChange}
+                      />
+
+                      <RadioOption
+                        label="Unregistered Person"
+                        value="UNREGISTERED_PERSON"
+                        checked={formData.violator_type === "UNREGISTERED_PERSON"}
+                        onChange={handleViolatorTypeChange}
+                      />
+                    </div>
+
+                    {formData.violator_type === "UNREGISTERED_PERSON" ? (
+                      <div className="row g-3">
+                        <FormInput
+                          label="Unregistered Name"
+                          value={formData.unregistered_name}
+                          onChange={(v) => setField("unregistered_name", v)}
+                        />
+
+                        <FormInput
+                          label="Contact"
+                          value={formData.unregistered_contact}
+                          onChange={(v) => setField("unregistered_contact", v)}
+                        />
+
+                        <FormInput
+                          label="Address"
+                          value={formData.unregistered_address}
+                          onChange={(v) => setField("unregistered_address", v)}
+                          col="col-12"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <FormInput
+                          label="Search Driver / Colorum"
+                          value={driverSearch}
+                          onChange={setDriverSearch}
+                          placeholder="Search by name, code, contact..."
+                          col="col-12"
+                        />
+
+                        <div
+                          className="border rounded-4 p-2 bg-white mt-2"
+                          style={{ maxHeight: 190, overflowY: "auto" }}
+                        >
+                          {driverResults.map((driver) => {
+                            const selected =
+                              Number(formData.driver_id) === Number(driver.id);
+
+                            return (
+                              <button
+                                key={driver.id}
+                                type="button"
+                                className={`btn w-100 text-start rounded-4 mb-2 p-3 border ${
+                                  selected
+                                    ? "btn-primary border-primary shadow-sm"
+                                    : "border-light"
+                                }`}
+                                style={{
+                                  background: selected ? undefined : "#ffffff",
+                                }}
+                                onClick={() => handleDriverChange(driver.id)}
+                              >
+                                <div className="fw-semibold">
+                                  {driver.name || "Unnamed"}
+                                </div>
+                                <div className="small">
+                                  {driver.driver_code || "No code"} •{" "}
+                                  {driver.classification || "—"}
+                                </div>
+                              </button>
+                            );
+                          })}
+
+                          {driverResults.length === 0 && (
+                            <div className="text-muted text-center py-3">
+                              No driver found.
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-3">
+                          <label className="form-label small text-muted">
+                            Vehicle
+                          </label>
+                          <select
+                            className="form-select rounded-4 bg-white"
+                            value={formData.vehicle_id}
+                            onChange={(e) =>
+                              setField("vehicle_id", e.target.value)
+                            }
+                            disabled={!selectedDriver}
+                          >
+                            <option value="">No vehicle / Select vehicle</option>
+                            {availableVehicles.map((vehicle) => (
+                              <option key={vehicle.id} value={vehicle.id}>
+                                {vehicle.plateNo ||
+                                  vehicle.plate_number ||
+                                  "No Plate"}{" "}
+                                -{" "}
+                                {vehicle.modelMake ||
+                                  vehicle.model_make ||
+                                  vehicle.motor ||
+                                  "Vehicle"}
+                              </option>
+                            ))}
+                          </select>
+
+                          <div className="mt-2 small">
+                            System classification:{" "}
+                            <span
+                              className={`badge rounded-pill px-3 py-2 ${
+                                systemClassification === "REGISTERED"
+                                  ? "bg-success-subtle text-success-emphasis"
+                                  : systemClassification === "COLORUM"
+                                  ? "bg-warning-subtle text-warning-emphasis"
+                                  : "bg-secondary-subtle text-secondary-emphasis"
+                              }`}
+                            >
+                              {systemClassification}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </SectionBox>
                 </div>
 
-                <FormInput
-                  label="Violation Date"
-                  placeholder="MM/DD/YYYY"
-                  value={formData.violationDate}
-                  onChange={(v) => setField("violationDate", formatDateInput(v))}
-                />
-
-                <FormInput
-                  label="Driver’s Name"
-                  value={formData.driverName}
-                  onChange={(v) => setField("driverName", v)}
-                />
-
                 <div className="col-md-6">
-                  <label className="form-label small text-muted">Classification</label>
-                  <select
-                    className="form-select rounded-4"
-                    value={formData.classification}
-                    onChange={(e) => setField("classification", e.target.value)}
-                  >
-                    <option value="Colorum">Colorum</option>
-                    <option value="Registered">Registered</option>
-                    <option value="Temporary">Temporary</option>
-                    <option value="Special Franchise">Special Franchise</option>
-                  </select>
+                  <SectionBox title="Violation Type(s)">
+                    <FormInput
+                      label="Search Violation"
+                      value={violationSearch}
+                      onChange={setViolationSearch}
+                      placeholder="Search violation code/name..."
+                      col="col-12"
+                    />
+
+                    <div
+                      className="border rounded-4 p-2 mt-2 bg-white"
+                      style={{ maxHeight: 270, overflowY: "auto" }}
+                    >
+                      {violationResults.map((item) => {
+                        const checked = formData.violation_type_ids
+                          .map(Number)
+                          .includes(Number(item.id));
+
+                        return (
+                          <label
+                            key={item.id}
+                            className={`d-flex align-items-start gap-3 p-3 rounded-4 mb-2 border ${
+                              checked
+                                ? "border-primary bg-primary-subtle"
+                                : "border-light bg-white"
+                            }`}
+                            style={{
+                              cursor: "pointer",
+                              boxShadow: checked
+                                ? "0 4px 12px rgba(13,110,253,0.12)"
+                                : "none",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              className="form-check-input mt-1 border border-2 border-primary"
+                              style={{
+                                width: 20,
+                                height: 20,
+                                cursor: "pointer",
+                              }}
+                              checked={checked}
+                              onChange={() =>
+                                toggleArrayValue("violation_type_ids", item.id)
+                              }
+                            />
+
+                            <span>
+                              <span className="fw-semibold text-dark">
+                                {item.violation_code} - {item.name}
+                              </span>
+                              <br />
+                              <span className="small text-muted">
+                                {item.group_name || "No group"} •{" "}
+                                {money(item.penalty_amount)}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+
+                      {violationResults.length === 0 && (
+                        <div className="text-center text-muted py-3">
+                          No violations found.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="small text-muted mt-2">
+                      Total official penalty:{" "}
+                      <span className="fw-bold text-danger">
+                        {money(totalPenalty)}
+                      </span>
+                    </div>
+                  </SectionBox>
                 </div>
 
-                <FormInput
-                  label="Location"
-                  value={formData.location}
-                  onChange={(v) => setField("location", v)}
-                />
-
-                <FormInput
-                  label="Official Penalty"
-                  type="number"
-                  value={formData.officialPenalty}
-                  onChange={(v) => setField("officialPenalty", v)}
-                  disabled
-                />
-
-                <FormInput
-                  label="Declared Penalty"
-                  type="number"
-                  value={formData.declaredPenalty}
-                  onChange={(v) => {
-                    const declared = Number(v || 0);
-                    const official = Number(formData.officialPenalty || 0);
-                    setFormData((prev) => ({
-                      ...prev,
-                      declaredPenalty: v,
-                      discount: Math.max(official - declared, 0),
-                      payableAmount: declared,
-                    }));
-                  }}
-                />
-
-                <FormInput
-                  label="Auto Discount"
-                  value={money(discount)}
-                  onChange={() => {}}
-                  disabled
-                />
-
-                <FormInput
-                  label="Payable Amount"
-                  value={money(declaredPenalty)}
-                  onChange={() => {}}
-                  disabled
-                />
-
-                <FormInput
-                  label="Date Paid"
-                  placeholder="MM/DD/YYYY"
-                  value={formData.datePaid || ""}
-                  onChange={(v) => setField("datePaid", formatDateInput(v))}
-                />
-
-                <FormInput
-                  label="OR Number"
-                  value={formData.orNumber || ""}
-                  onChange={(v) => setField("orNumber", v)}
-                />
-
                 <div className="col-md-6">
-                  <label className="form-label small text-muted">Status</label>
-                  <select
-                    className="form-select rounded-4"
-                    value={formData.status}
-                    onChange={(e) => setField("status", e.target.value)}
-                  >
-                    <option value="New">New</option>
-                    <option value="On Process">On Process</option>
-                    <option value="Done">Done</option>
-                  </select>
+                  <SectionBox title="Enforcer(s)">
+                    <FormInput
+                      label="Search Enforcer"
+                      value={enforcerSearch}
+                      onChange={setEnforcerSearch}
+                      placeholder="Search enforcer name/code..."
+                      col="col-12"
+                    />
+
+                    <div
+                      className="border rounded-4 p-2 mt-2 bg-white"
+                      style={{ maxHeight: 270, overflowY: "auto" }}
+                    >
+                      {enforcerResults.map((enforcer) => {
+                        const checked = formData.enforcer_ids
+                          .map(Number)
+                          .includes(Number(enforcer.id));
+
+                        return (
+                          <label
+                            key={enforcer.id}
+                            className={`d-flex align-items-start gap-3 p-3 rounded-4 mb-2 border ${
+                              checked
+                                ? "border-primary bg-primary-subtle"
+                                : "border-light bg-white"
+                            }`}
+                            style={{
+                              cursor: "pointer",
+                              boxShadow: checked
+                                ? "0 4px 12px rgba(13,110,253,0.12)"
+                                : "none",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              className="form-check-input mt-1 border border-2 border-primary"
+                              style={{
+                                width: 20,
+                                height: 20,
+                                cursor: "pointer",
+                              }}
+                              checked={checked}
+                              onChange={() =>
+                                toggleArrayValue("enforcer_ids", enforcer.id)
+                              }
+                            />
+
+                            <span>
+                              <span className="fw-semibold text-dark">
+                                {enforcer.name || "Unnamed"}
+                              </span>
+                              <br />
+                              <span className="small text-muted">
+                                {enforcer.enforcer_code || "No code"}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+
+                      {enforcerResults.length === 0 && (
+                        <div className="text-center text-muted py-3">
+                          No enforcers found.
+                        </div>
+                      )}
+                    </div>
+                  </SectionBox>
                 </div>
 
                 <div className="col-12">
-                  <label className="form-label small text-muted">Enforcer(s)</label>
-
-                  {formData.enforcers.map((name, index) => (
-                    <div className="d-flex gap-2 mb-2" key={index}>
-                      <input
-                        className="form-control rounded-4"
-                        value={name}
-                        placeholder="Enforcer name"
-                        onChange={(e) => setEnforcer(index, e.target.value)}
+                  <SectionBox title="Apprehension Details">
+                    <div className="row g-3">
+                      <FormInput
+                        label="Apprehension Date"
+                        type="datetime-local"
+                        value={formData.apprehension_date}
+                        onChange={(v) => setField("apprehension_date", v)}
                       />
 
-                      {formData.enforcers.length > 1 && (
-                        <button
-                          className="btn btn-outline-danger rounded-4"
-                          type="button"
-                          onClick={() => removeEnforcer(index)}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                      <FormInput
+                        label="Location"
+                        value={formData.location}
+                        onChange={(v) => setField("location", v)}
+                      />
 
-                  <button
-                    className="btn btn-sm btn-outline-primary rounded-4"
-                    type="button"
-                    onClick={addEnforcer}
-                  >
-                    + Add Enforcer
-                  </button>
+                      <FormInput
+                        label="Commission Rate"
+                        type="number"
+                        value={formData.commission_rate}
+                        onChange={(v) => setField("commission_rate", v)}
+                      />
+
+                      <FormInput
+                        label="Remarks"
+                        value={formData.remarks}
+                        onChange={(v) => setField("remarks", v)}
+                        col="col-md-6"
+                      />
+                    </div>
+                  </SectionBox>
                 </div>
               </div>
             </div>
 
-            <div className="modal-footer border-0 pt-0">
+            <div className="modal-footer border-0 pt-3 bg-white">
               <button
                 type="button"
                 className="btn btn-outline-secondary rounded-4 px-4"
                 onClick={onClose}
+                disabled={saving}
               >
                 Cancel
               </button>
@@ -922,8 +1548,13 @@ function ViolationFormModal({
                 type="button"
                 className="btn btn-primary rounded-4 px-4"
                 onClick={onSave}
+                disabled={saving}
               >
-                Save Violation
+                {saving
+                  ? "Saving..."
+                  : isEditing
+                  ? "Save Changes"
+                  : "Save Apprehension"}
               </button>
             </div>
           </div>
@@ -935,49 +1566,381 @@ function ViolationFormModal({
   );
 }
 
-function ViolationViewModal({ show, row, onClose }) {
+function SectionBox({ title, children }) {
+  return (
+    <div
+      className="bg-white border shadow-sm rounded-4 p-3 h-100"
+      style={{ borderColor: "#e5e7eb" }}
+    >
+      <div className="fw-bold mb-3 text-dark">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function ViolationViewModal({
+  show,
+  row,
+  saving,
+  onClose,
+  onEdit,
+  onStartProcessing,
+  onOpenPayment,
+  onSettle,
+  onImpound,
+  onCancel,
+  onDispute,
+}) {
   if (!show || !row) return null;
 
-  const officialPenalty = row.officialPenalty ?? row.penaltyAmount ?? row.totalAmount ?? 0;
-  const declaredPenalty = row.declaredPenalty ?? row.payableAmount ?? row.totalAmount ?? 0;
-  const discount = Math.max(Number(officialPenalty) - Number(declaredPenalty), 0);
+  const raw = row.raw || {};
+  const processors = raw.processors || [];
+  const transactions = raw.transactions || [];
+
+  const canStart = row.status === "New";
+  const canRecordPayment = ["New", "On Process", "Disputed"].includes(row.status);
+  const canSettle = row.status === "Paid";
+  const canEdit = !["Paid", "Settled", "Cancelled"].includes(row.status);
+  const canCancel = ["New", "On Process", "Disputed"].includes(row.status);
+  const canDispute = ["New", "On Process"].includes(row.status);
+  const canImpound = Boolean(raw.vehicle_id) && !["Settled", "Cancelled"].includes(row.status);
 
   return (
     <>
       <div className="modal fade show d-block" tabIndex="-1">
-        <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-dialog modal-dialog-centered modal-xl">
           <div className="modal-content border-0 rounded-4 shadow">
             <div className="modal-header border-0">
-              <h5 className="modal-title fw-bold">Violation Details</h5>
+              <div>
+                <h5 className="modal-title fw-bold">Apprehension Details</h5>
+                <div className="text-muted small">
+                  View workflow status, assigned processors, payment, and actions.
+                </div>
+              </div>
               <button type="button" className="btn-close" onClick={onClose} />
             </div>
 
             <div className="modal-body">
               <div className="row g-3">
                 <ViewItem label="Ticket No." value={row.ticketNo} />
+                <ViewItem label="Status" value={<StatusBadge status={row.status} />} />
                 <ViewItem label="Violation Code" value={row.violationCode} />
-                <ViewItem label="Violation" value={row.violation} col="col-12" />
                 <ViewItem label="Violation Date" value={row.violationDate} />
+                <ViewItem label="Violation" value={row.violation} col="col-12" />
                 <ViewItem label="Driver’s Name" value={row.driverName} />
                 <ViewItem label="Classification" value={row.classification} />
                 <ViewItem label="Location" value={row.location} />
-                <ViewItem label="Official Penalty" value={money(officialPenalty)} />
-                <ViewItem label="Declared Penalty" value={money(declaredPenalty)} />
-                <ViewItem label="Auto Discount" value={money(discount)} />
-                <ViewItem label="Date Paid" value={row.datePaid || "unavailable"} />
+                <ViewItem
+                  label="Official Penalty"
+                  value={money(row.officialPenalty)}
+                />
+                <ViewItem
+                  label="Date Paid"
+                  value={row.datePaid ? String(row.datePaid).slice(0, 10) : "unavailable"}
+                />
                 <ViewItem label="OR Number" value={row.orNumber || "—"} />
-                <ViewItem label="Enforcer(s)" value={row.enforcers || "—"} col="col-12" />
-                <ViewItem label="Status" value={deriveStatus(row)} />
+                <ViewItem
+                  label="Enforcer(s)"
+                  value={row.enforcers || "—"}
+                  col="col-12"
+                />
+
+                <div className="col-md-6">
+                  <div className="small text-muted mb-1">Processors</div>
+                  <div className="bg-light rounded-4 px-3 py-3">
+                    {processors.length ? (
+                      processors.map((p) => (
+                        <div key={p.id}>
+                          <strong>{p.admin_name || "Admin"}</strong>
+                          <div className="small text-muted">
+                            {p.assigned_at ? String(p.assigned_at).slice(0, 16) : ""}
+                            {p.notes ? ` • ${p.notes}` : ""}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      "No processor yet"
+                    )}
+                  </div>
+                </div>
+
+                <div className="col-md-6">
+                  <div className="small text-muted mb-1">Transactions</div>
+                  <div className="bg-light rounded-4 px-3 py-3">
+                    {transactions.length ? (
+                      transactions.map((t) => (
+                        <div key={t.id} className="mb-2">
+                          <strong>{t.or_number || t.transaction_code}</strong>
+                          <div className="small text-muted">
+                            {money(t.amount_paid)} • {t.payment_method || "CASH"} •{" "}
+                            {t.paid_at ? String(t.paid_at).slice(0, 10) : "No date"}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      "No payment recorded"
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer border-0 d-flex flex-wrap gap-2">
+              {canStart && (
+                <button
+                  className="btn btn-info rounded-4 px-4"
+                  type="button"
+                  onClick={() => onStartProcessing(row)}
+                  disabled={saving}
+                >
+                  Start Processing
+                </button>
+              )}
+
+              {canRecordPayment && (
+                <button
+                  className="btn btn-success rounded-4 px-4"
+                  type="button"
+                  onClick={() => onOpenPayment(row)}
+                  disabled={saving}
+                >
+                  Record Payment
+                </button>
+              )}
+
+              {canSettle && (
+                <button
+                  className="btn btn-primary rounded-4 px-4"
+                  type="button"
+                  onClick={() => onSettle(row)}
+                  disabled={saving}
+                >
+                  Settle / Release
+                </button>
+              )}
+
+              {canImpound && (
+                <button
+                  className="btn btn-warning rounded-4 px-4"
+                  type="button"
+                  onClick={() => onImpound(row)}
+                  disabled={saving}
+                >
+                  Impound Vehicle
+                </button>
+              )}
+
+              {canEdit && (
+                <button
+                  className="btn btn-outline-primary rounded-4 px-4"
+                  type="button"
+                  onClick={() => onEdit(row)}
+                  disabled={saving}
+                >
+                  Edit
+                </button>
+              )}
+
+              {canDispute && (
+                <button
+                  className="btn btn-outline-danger rounded-4 px-4"
+                  type="button"
+                  onClick={() => onDispute(row)}
+                  disabled={saving}
+                >
+                  Dispute
+                </button>
+              )}
+
+              {canCancel && (
+                <button
+                  className="btn btn-danger rounded-4 px-4"
+                  type="button"
+                  onClick={() => onCancel(row)}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+              )}
+
+              <button
+                className="btn btn-light rounded-4 px-4"
+                type="button"
+                onClick={onClose}
+                disabled={saving}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+function PaymentModal({ show, row, form, setForm, saving, onClose, onSave }) {
+  if (!show || !row) return null;
+
+  function setField(key, value) {
+    setForm((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
+  return (
+    <>
+      <div className="modal fade show d-block" tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content border-0 rounded-4 shadow">
+            <div className="modal-header border-0">
+              <div>
+                <h5 className="modal-title fw-bold">Record Payment</h5>
+                <div className="text-muted small">
+                  {row.ticketNo} • {money(row.officialPenalty)}
+                </div>
+              </div>
+              <button type="button" className="btn-close" onClick={onClose} />
+            </div>
+
+            <div className="modal-body">
+              <div className="row g-3">
+                <FormInput
+                  label="OR Number"
+                  value={form.or_number}
+                  onChange={(v) => setField("or_number", v)}
+                  col="col-12"
+                />
+
+                <FormInput
+                  label="Amount Paid"
+                  type="number"
+                  value={form.amount_paid}
+                  onChange={(v) => setField("amount_paid", v)}
+                  col="col-12"
+                />
+
+                <div className="col-12">
+                  <label className="form-label small text-muted">
+                    Payment Method
+                  </label>
+                  <select
+                    className="form-select rounded-4 bg-white"
+                    value={form.payment_method}
+                    onChange={(e) => setField("payment_method", e.target.value)}
+                  >
+                    <option value="CASH">Cash</option>
+                    <option value="GCASH">GCash</option>
+                    <option value="BANK_TRANSFER">Bank Transfer</option>
+                    <option value="OTHER">Other</option>
+                  </select>
+                </div>
+
+                <FormInput
+                  label="Date Paid"
+                  type="datetime-local"
+                  value={form.paid_at}
+                  onChange={(v) => setField("paid_at", v)}
+                  col="col-12"
+                />
+
+                <FormInput
+                  label="Remarks"
+                  value={form.remarks}
+                  onChange={(v) => setField("remarks", v)}
+                  col="col-12"
+                />
               </div>
             </div>
 
             <div className="modal-footer border-0">
               <button
-                className="btn btn-primary rounded-4 px-4"
+                className="btn btn-outline-secondary rounded-4 px-4"
                 type="button"
                 onClick={onClose}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="btn btn-success rounded-4 px-4"
+                type="button"
+                onClick={onSave}
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Save Payment"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+function ReasonModal({
+  show,
+  type,
+  row,
+  value,
+  onChange,
+  saving,
+  onClose,
+  onSubmit,
+}) {
+  if (!show || !row) return null;
+
+  const title = type === "cancel" ? "Cancel Apprehension" : "Dispute Apprehension";
+
+  return (
+    <>
+      <div className="modal fade show d-block" tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content border-0 rounded-4 shadow">
+            <div className="modal-header border-0">
+              <div>
+                <h5 className="modal-title fw-bold">{title}</h5>
+                <div className="text-muted small">{row.ticketNo}</div>
+              </div>
+              <button type="button" className="btn-close" onClick={onClose} />
+            </div>
+
+            <div className="modal-body">
+              <label className="form-label small text-muted">Reason</label>
+              <textarea
+                className="form-control rounded-4 bg-white"
+                rows={4}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="Enter reason..."
+              />
+            </div>
+
+            <div className="modal-footer border-0">
+              <button
+                className="btn btn-outline-secondary rounded-4 px-4"
+                type="button"
+                onClick={onClose}
+                disabled={saving}
               >
                 Close
+              </button>
+
+              <button
+                className={`btn rounded-4 px-4 ${
+                  type === "cancel" ? "btn-danger" : "btn-warning"
+                }`}
+                type="button"
+                onClick={onSubmit}
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Submit"}
               </button>
             </div>
           </div>
@@ -996,19 +1959,39 @@ function FormInput({
   placeholder = "",
   type = "text",
   disabled = false,
+  col = "col-md-6",
 }) {
   return (
-    <div className="col-md-6">
+    <div className={col}>
       <label className="form-label small text-muted">{label}</label>
       <input
         type={type}
-        className="form-control rounded-4"
+        className="form-control rounded-4 bg-white"
         placeholder={placeholder}
         value={value || ""}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
       />
     </div>
+  );
+}
+
+function RadioOption({ label, value, checked, onChange }) {
+  return (
+    <label className="form-check d-flex align-items-center gap-2">
+      <input
+        className="form-check-input border border-2 border-primary"
+        style={{
+          width: 18,
+          height: 18,
+          cursor: "pointer",
+        }}
+        type="radio"
+        checked={checked}
+        onChange={() => onChange(value)}
+      />
+      <span className="form-check-label fw-medium text-dark">{label}</span>
+    </label>
   );
 }
 
@@ -1026,72 +2009,15 @@ function StatusBadge({ status }) {
     New: "bg-warning-subtle text-warning-emphasis",
     "On Process": "bg-info-subtle text-info-emphasis",
     Done: "bg-success-subtle text-success-emphasis",
+    Paid: "bg-success-subtle text-success-emphasis",
+    Settled: "bg-success-subtle text-success-emphasis",
+    Cancelled: "bg-danger-subtle text-danger-emphasis",
+    Disputed: "bg-danger-subtle text-danger-emphasis",
   };
 
   return (
     <span className={`badge rounded-pill ${map[status] || "bg-secondary"}`}>
       {status}
     </span>
-  );
-}
-
-function FilterCheck({ label, checked, onChange }) {
-  const safeId = label.replace(/\s+/g, "-").replace(/[^\w-]/g, "");
-
-  return (
-    <div className="form-check mb-2">
-      <input
-        className="form-check-input"
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        id={safeId}
-      />
-      <label className="form-check-label text-capitalize" htmlFor={safeId}>
-        {label.replace(/([A-Z])/g, " $1")}
-      </label>
-    </div>
-  );
-}
-
-function ActionButtons({ row, onView, onPrint, onEdit, onDelete }) {
-  return (
-    <>
-      <button
-        className="btn btn-sm btn-light rounded-circle me-1"
-        onClick={() => onView?.(row)}
-        title="View"
-        type="button"
-      >
-        <i className="bi bi-eye" />
-      </button>
-
-      <button
-        className="btn btn-sm btn-light rounded-circle me-1"
-        onClick={() => onPrint?.(row)}
-        title="Print"
-        type="button"
-      >
-        <i className="bi bi-printer" />
-      </button>
-
-      <button
-        className="btn btn-sm btn-light rounded-circle me-1"
-        onClick={() => onEdit?.(row)}
-        title="Edit"
-        type="button"
-      >
-        <i className="bi bi-pencil-square" />
-      </button>
-
-      <button
-        className="btn btn-sm btn-light rounded-circle"
-        onClick={() => onDelete?.(row)}
-        title="Delete"
-        type="button"
-      >
-        <i className="bi bi-trash" />
-      </button>
-    </>
   );
 }

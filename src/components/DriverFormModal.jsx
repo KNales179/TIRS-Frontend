@@ -1,34 +1,35 @@
+// components/DriverFormModal.jsx
 import React, { useEffect, useMemo, useState } from "react";
 
-const TYPE_OPTIONS = ["WITH FRANCHISE", "SPECIAL FRANCHISE"];
-
 const initialForm = (mode) => ({
-  driverName: "",
-  operatorName: "",
+  classification: mode === "COLORUM" ? "COLORUM" : "REGULAR",
+  operator_name: "",
+  first_name: "",
+  middle_name: "",
+  last_name: "",
+  suffix: "",
+  birth_date: "",
+  gender: "",
+  contact_number: "",
   address: "",
-  contact: "",
-  toda: "",
-  motor: "",
-  modelMake: "",
-  engine: "",
-  chassis: "",
-  plateNo: "",
-  type: mode === "COLORUM" ? "COLORUM" : "WITH FRANCHISE",
-  franchiseNo: "",
+  license_number: "",
+  license_expiry: "",
   photoFile: null,
 });
 
 export default function DriverFormModal({ show, mode, onClose, onSubmit }) {
   const title = useMemo(
-    () => (mode === "COLORUM" ? "Colorum Form" : "Driver’s Form"),
+    () => (mode === "COLORUM" ? "New Profile Form" : "New Profile Form"),
     [mode]
   );
 
   const [form, setForm] = useState(initialForm(mode));
+  const [previewUrl, setPreviewUrl] = useState("");
 
   useEffect(() => {
     if (show) {
       setForm(initialForm(mode));
+      setPreviewUrl("");
     }
   }, [show, mode]);
 
@@ -42,56 +43,37 @@ export default function DriverFormModal({ show, mode, onClose, onSubmit }) {
       ...prev,
       [key]: value,
     }));
+
+    if (key === "photoFile") {
+      setPreviewUrl(value ? URL.createObjectURL(value) : "");
+    }
   };
 
   const canSubmit =
-    form.driverName.trim() &&
+    form.first_name.trim() &&
+    form.last_name.trim() &&
     form.address.trim() &&
-    form.contact.trim() &&
-    (mode === "COLORUM" ? true : form.toda.trim()) &&
-    form.motor.trim() &&
-    form.modelMake.trim() &&
-    form.engine.trim() &&
-    form.chassis.trim() &&
-    (mode === "COLORUM" ? true : form.franchiseNo.trim());
+    form.contact_number.trim();
 
   function handleSubmit(e) {
     e.preventDefault();
     if (!canSubmit) return;
 
-    const photoUrl = form.photoFile ? URL.createObjectURL(form.photoFile) : "";
-
     onSubmit({
-      type: mode === "COLORUM" ? "COLORUM" : form.type,
-      name: form.driverName.trim(),
-      operatorName: form.operatorName.trim(),
+      classification: mode === "COLORUM" ? "COLORUM" : form.classification,
+      operator_name: form.operator_name.trim() || null,
+      first_name: form.first_name.trim(),
+      middle_name: form.middle_name.trim() || null,
+      last_name: form.last_name.trim(),
+      suffix: form.suffix.trim() || null,
+      birth_date: form.birth_date || null,
+      gender: form.gender || null,
+      contact_number: form.contact_number.trim(),
       address: form.address.trim(),
-      contact: form.contact.trim(),
-      toda: mode === "COLORUM" ? "Unregistered" : form.toda.trim(),
-      franchiseNo: mode === "COLORUM" ? "" : form.franchiseNo.trim(),
-      photoUrl,
-      vehicles: [
-        {
-          motor: form.motor.trim(),
-          modelMake: form.modelMake.trim(),
-          engine: form.engine.trim(),
-          chassis: form.chassis.trim(),
-          plateNo: form.plateNo.trim(),
-          status: mode === "COLORUM" ? "Colorum" : form.type,
-          violations: [],
-        },
-      ],
-      transactions: [],
-      franchises:
-        mode === "COLORUM"
-          ? []
-          : [
-              {
-                id: `f_${Date.now()}`,
-                number: form.franchiseNo.trim(),
-                vehicleIndex: 0,
-              },
-            ],
+      license_number: form.license_number.trim() || null,
+      license_expiry: form.license_expiry || null,
+      photo_url: null,
+      status: "ACTIVE",
     });
 
     onClose();
@@ -105,51 +87,140 @@ export default function DriverFormModal({ show, mode, onClose, onSubmit }) {
     >
       <div
         className="bg-white rounded-4 shadow-lg w-100"
-        style={{
-          maxWidth: 460,
-          maxHeight: "90vh",
-          overflow: "auto",
-        }}
+        style={{ maxWidth: 520, maxHeight: "90vh", overflow: "auto" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4">
           <div className="d-flex align-items-center justify-content-between mb-3">
             <h2 className="h5 fw-bold mb-0">{title}</h2>
-            <button
-              className="btn btn-light rounded-circle"
-              type="button"
-              onClick={onClose}
-            >
+            <button className="btn btn-light rounded-circle" type="button" onClick={onClose}>
               ✕
             </button>
           </div>
 
           <form onSubmit={handleSubmit}>
             <div className="mb-3">
-              <div className="small text-muted mb-1">Attach Photo (optional)</div>
+              <div className="small text-muted mb-1">Profile Picture</div>
+
+              <div className="d-flex align-items-center gap-3">
+                <div
+                  className="rounded-circle d-flex align-items-center justify-content-center bg-light border"
+                  style={{ width: 72, height: 72, overflow: "hidden", flex: "0 0 auto" }}
+                >
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt="Profile preview"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <i className="bi bi-person text-muted fs-3"></i>
+                  )}
+                </div>
+
+                <input
+                  className="form-control"
+                  type="file"
+                  accept="image/*"
+                  onChange={set("photoFile")}
+                />
+              </div>
+            </div>
+
+            {mode !== "COLORUM" && (
+              <div className="mb-3">
+                <div className="small text-muted mb-1">Driver Classification</div>
+                <select
+                  className="form-select bg-light border-0 rounded-4"
+                  value={form.classification}
+                  onChange={set("classification")}
+                >
+                  <option value="REGULAR">Regular Driver</option>
+                  <option value="SPECIAL">Special Franchise Driver</option>
+                  <option value="TEMPORARY">Temporary Driver</option>
+                </select>
+              </div>
+            )}
+
+            <div className="mb-3">
+              <div className="small text-muted mb-1">Operator Name</div>
               <input
-                className="form-control"
-                type="file"
-                accept="image/*"
-                onChange={set("photoFile")}
+                className="form-control bg-light border-0 rounded-4"
+                value={form.operator_name}
+                onChange={set("operator_name")}
               />
             </div>
 
-            <div className="mb-3">
-              <div className="small text-muted mb-1">Driver’s Name</div>
-              <input
-                className="form-control bg-light border-0 rounded-4"
-                value={form.driverName}
-                onChange={set("driverName")}
-              />
+            <div className="row g-2">
+              <div className="col-md-6 mb-3">
+                <div className="small text-muted mb-1">First Name</div>
+                <input
+                  className="form-control bg-light border-0 rounded-4"
+                  value={form.first_name}
+                  onChange={set("first_name")}
+                />
+              </div>
+
+              <div className="col-md-6 mb-3">
+                <div className="small text-muted mb-1">Middle Name</div>
+                <input
+                  className="form-control bg-light border-0 rounded-4"
+                  value={form.middle_name}
+                  onChange={set("middle_name")}
+                />
+              </div>
+
+              <div className="col-md-6 mb-3">
+                <div className="small text-muted mb-1">Last Name</div>
+                <input
+                  className="form-control bg-light border-0 rounded-4"
+                  value={form.last_name}
+                  onChange={set("last_name")}
+                />
+              </div>
+
+              <div className="col-md-6 mb-3">
+                <div className="small text-muted mb-1">Suffix</div>
+                <input
+                  className="form-control bg-light border-0 rounded-4"
+                  value={form.suffix}
+                  onChange={set("suffix")}
+                  placeholder="Jr., Sr., III"
+                />
+              </div>
+            </div>
+
+            <div className="row g-2">
+              <div className="col-md-6 mb-3">
+                <div className="small text-muted mb-1">Birth Date</div>
+                <input
+                  className="form-control bg-light border-0 rounded-4"
+                  type="date"
+                  value={form.birth_date}
+                  onChange={set("birth_date")}
+                />
+              </div>
+
+              <div className="col-md-6 mb-3">
+                <div className="small text-muted mb-1">Gender</div>
+                <select
+                  className="form-select bg-light border-0 rounded-4"
+                  value={form.gender}
+                  onChange={set("gender")}
+                >
+                  <option value="">Select Gender</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </div>
             </div>
 
             <div className="mb-3">
-              <div className="small text-muted mb-1">Operator’s Name</div>
+              <div className="small text-muted mb-1">Contact Number</div>
               <input
                 className="form-control bg-light border-0 rounded-4"
-                value={form.operatorName}
-                onChange={set("operatorName")}
+                value={form.contact_number}
+                onChange={set("contact_number")}
               />
             </div>
 
@@ -162,104 +233,28 @@ export default function DriverFormModal({ show, mode, onClose, onSubmit }) {
               />
             </div>
 
-            <div className="mb-3">
-              <div className="small text-muted mb-1">Contact No.</div>
-              <input
-                className="form-control bg-light border-0 rounded-4"
-                value={form.contact}
-                onChange={set("contact")}
-              />
-            </div>
-
-            {mode !== "COLORUM" && (
-              <div className="mb-3">
-                <div className="small text-muted mb-1">Driver Type</div>
-                <select
-                  className="form-select bg-light border-0 rounded-4"
-                  value={form.type}
-                  onChange={set("type")}
-                >
-                  {TYPE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {mode !== "COLORUM" && (
-              <div className="mb-3">
-                <div className="small text-muted mb-1">TODA</div>
+            <div className="row g-2">
+              <div className="col-md-6 mb-4">
+                <div className="small text-muted mb-1">License Number</div>
                 <input
                   className="form-control bg-light border-0 rounded-4"
-                  value={form.toda}
-                  onChange={set("toda")}
+                  value={form.license_number}
+                  onChange={set("license_number")}
                 />
               </div>
-            )}
 
-            <div className="mb-3">
-              <div className="small text-muted mb-1">Motor</div>
-              <input
-                className="form-control bg-light border-0 rounded-4"
-                value={form.motor}
-                onChange={set("motor")}
-              />
-            </div>
-
-            <div className="mb-3">
-              <div className="small text-muted mb-1">Model / Make</div>
-              <input
-                className="form-control bg-light border-0 rounded-4"
-                value={form.modelMake}
-                onChange={set("modelMake")}
-              />
-            </div>
-
-            <div className="mb-3">
-              <div className="small text-muted mb-1">Engine</div>
-              <input
-                className="form-control bg-light border-0 rounded-4"
-                value={form.engine}
-                onChange={set("engine")}
-              />
-            </div>
-
-            <div className="mb-3">
-              <div className="small text-muted mb-1">Chassis</div>
-              <input
-                className="form-control bg-light border-0 rounded-4"
-                value={form.chassis}
-                onChange={set("chassis")}
-              />
-            </div>
-
-            <div className="mb-3">
-              <div className="small text-muted mb-1">Plate Number</div>
-              <input
-                className="form-control bg-light border-0 rounded-4"
-                value={form.plateNo}
-                onChange={set("plateNo")}
-              />
-            </div>
-
-            {mode !== "COLORUM" && (
-              <div className="mb-4">
-                <div className="small text-muted mb-1">Franchise Number</div>
+              <div className="col-md-6 mb-4">
+                <div className="small text-muted mb-1">License Expiry</div>
                 <input
                   className="form-control bg-light border-0 rounded-4"
-                  value={form.franchiseNo}
-                  onChange={set("franchiseNo")}
+                  type="date"
+                  value={form.license_expiry}
+                  onChange={set("license_expiry")}
                 />
               </div>
-            )}
+            </div>
 
-            <button
-              className="btn btn-primary w-100 rounded-4 py-2"
-              type="submit"
-              disabled={!canSubmit}
-            >
+            <button className="btn btn-primary w-100 rounded-4 py-2" type="submit" disabled={!canSubmit}>
               Add
             </button>
           </form>

@@ -1,67 +1,58 @@
-import { useMemo, useState } from "react";
+// pages/Settings.jsx
+import { useEffect, useMemo, useState } from "react";
+import { getToken } from "../data/auth";
 
-const violationsMaster = [
-  { code: "5001", name: "Colorum Tricycle – 1st Offense", group: "Colorum Tricycle", offenseLevel: 1, penalty: 3000 },
-  { code: "5002", name: "Colorum Tricycle – 2nd and succeeding offense", group: "Colorum Tricycle", offenseLevel: 2, penalty: 5000 },
-  { code: "5003", name: "Without ID Plate – 1st Offense", group: "Without ID Plate", offenseLevel: 1, penalty: 200 },
-  { code: "5004", name: "Without ID Plate – 2nd Offense", group: "Without ID Plate", offenseLevel: 2, penalty: 400 },
-  { code: "5005", name: "Removal/Tampering of ID Card – 1st Offense", group: "Removal/Tampering of ID Card", offenseLevel: 1, penalty: 200 },
-  { code: "5006", name: "Removal/Tampering of ID Card – 2nd Offense", group: "Removal/Tampering of ID Card", offenseLevel: 2, penalty: 400 },
-  { code: "5007", name: "Without Serial No. on windshield &/or Plate – 1st Offense", group: "Without Serial No. on windshield &/or Plate", offenseLevel: 1, penalty: 200 },
-  { code: "5008", name: "Without Serial No. on windshield &/or Plate – 2nd Offense", group: "Without Serial No. on windshield &/or Plate", offenseLevel: 2, penalty: 400 },
-  { code: "5009", name: "Using Improvised ID No. Plate without Permit – 1st Offense", group: "Using Improvised ID No. Plate without Permit", offenseLevel: 1, penalty: 200 },
-  { code: "5010", name: "Using Improvised ID No. Plate without Permit – 2nd Offense", group: "Using Improvised ID No. Plate without Permit", offenseLevel: 2, penalty: 400 },
-  { code: "5011", name: "Operating on Banned Days – 1st Offense", group: "Operating on Banned Days", offenseLevel: 1, penalty: 200 },
-  { code: "5012", name: "Operating on Banned Days – 2nd Offense", group: "Operating on Banned Days", offenseLevel: 2, penalty: 400 },
-  { code: "5013", name: "No garbage receptacle – 1st Offense", group: "No garbage receptacle", offenseLevel: 1, penalty: 200 },
-  { code: "5014", name: "No garbage receptacle – 2nd Offense", group: "No garbage receptacle", offenseLevel: 2, penalty: 400 },
-  { code: "5015", name: "Wearing Slipper, sando or short – 1st Offense", group: "Wearing Slipper, sando or short", offenseLevel: 1, penalty: 200 },
-  { code: "5016", name: "Wearing Slipper, sando or short – 2nd Offense", group: "Wearing Slipper, sando or short", offenseLevel: 2, penalty: 500 },
-  { code: "5017", name: "Wearing Slipper, sando or short – 3rd Offense", group: "Wearing Slipper, sando or short", offenseLevel: 3, penalty: 1000 },
-  { code: "5018", name: "Overcharging – 1st Offense", group: "Overcharging", offenseLevel: 1, penalty: 200 },
-  { code: "5019", name: "Overcharging – 2nd Offense", group: "Overcharging", offenseLevel: 2, penalty: 500 },
-  { code: "5020", name: "Overcharging – 3rd Offense", group: "Overcharging", offenseLevel: 3, penalty: 1000 },
-  { code: "5024", name: "Refusal to Convey Passenger – 1st Offense", group: "Refusal to Convey Passenger", offenseLevel: 1, penalty: 200 },
-  { code: "5025", name: "Refusal to Convey Passenger – 2nd Offense", group: "Refusal to Convey Passenger", offenseLevel: 2, penalty: 500 },
-  { code: "5026", name: "Refusal to Convey Passenger – 3rd Offense", group: "Refusal to Convey Passenger", offenseLevel: 3, penalty: 1000 },
-  { code: "5027", name: "Selling of MTOP/Franchise Line", group: "Selling of MTOP/Franchise Line", offenseLevel: 1, penalty: 5000 },
-];
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const lucenaBarangays = [
-  "Barangay 1",
-  "Barangay 2",
-  "Barangay 3",
-  "Barangay 4",
-  "Barangay 5",
-  "Barangay 6",
-  "Barangay 7",
-  "Barangay 8",
-  "Barangay 9",
-  "Barangay 10",
-  "Barangay 11",
-  "Barra",
-  "Bocohan",
-  "Cotta",
-  "Dalahican",
-  "Domoit",
-  "Gulang-Gulang",
-  "Ibabang Dupay",
-  "Ibabang Iyam",
-  "Ibabang Talim",
-  "Ilayang Dupay",
-  "Ilayang Iyam",
-  "Ilayang Talim",
-  "Isabang",
-  "Market View",
-  "Mayao Castillo",
-  "Mayao Crossing",
-  "Mayao Kanluran",
-  "Mayao Parada",
-  "Mayao Silangan",
-  "Ransohan",
-  "Salinas",
-  "Talao-Talao",
+  "Barangay 1", "Barangay 2", "Barangay 3", "Barangay 4", "Barangay 5",
+  "Barangay 6", "Barangay 7", "Barangay 8", "Barangay 9", "Barangay 10",
+  "Barangay 11", "Barra", "Bocohan", "Cotta", "Dalahican", "Domoit",
+  "Gulang-Gulang", "Ibabang Dupay", "Ibabang Iyam", "Ibabang Talim",
+  "Ilayang Dupay", "Ilayang Iyam", "Ilayang Talim", "Isabang", "Market View",
+  "Mayao Castillo", "Mayao Crossing", "Mayao Kanluran", "Mayao Parada",
+  "Mayao Silangan", "Ransohan", "Salinas", "Talao-Talao",
 ];
+
+async function apiRequest(path, options = {}) {
+  const token = getToken();
+
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(data?.message || "Request failed");
+  }
+
+  return data;
+}
+
+function getCurrentUserFromToken() {
+  const token = getToken();
+
+  if (!token) return null;
+
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+
+    return {
+      id: payload.id || payload.admin_id || payload.user_id,
+      username: payload.username,
+      role: payload.role,
+      fullName: payload.full_name || payload.fullName,
+    };
+  } catch (err) {
+    return null;
+  }
+}
 
 function money(n) {
   return new Intl.NumberFormat("en-PH", {
@@ -70,19 +61,93 @@ function money(n) {
   }).format(Number(n || 0));
 }
 
-const emptyMembers = () => ["", "", "", "", ""];
+function emptyMembers() {
+  return ["", "", "", "", ""];
+}
+
+function normalizeViolation(item) {
+  return {
+    id: item.id,
+    code: item.violation_code || item.code || "",
+    name: item.name || "",
+    group: item.group_name || item.group || "Ungrouped",
+    offenseLevel: item.offense_level || item.offenseLevel || 1,
+    penalty: item.penalty_amount || item.penalty || 0,
+    status: item.status || "ACTIVE",
+  };
+}
+
+function normalizeToda(item) {
+  const officersArray = Array.isArray(item.officers) ? item.officers : [];
+  const membersArray = Array.isArray(item.members) ? item.members : [];
+
+  const officers = {
+    president: "",
+    vicePresident: "",
+    secretary: "",
+    treasurer: "",
+  };
+
+  officersArray.forEach((officer) => {
+    const position = String(officer.position || "").toUpperCase();
+    if (position === "PRESIDENT") officers.president = officer.full_name || "";
+    if (position === "VICE_PRESIDENT") officers.vicePresident = officer.full_name || "";
+    if (position === "SECRETARY") officers.secretary = officer.full_name || "";
+    if (position === "TREASURER") officers.treasurer = officer.full_name || "";
+  });
+
+  return {
+    id: item.id,
+    todaCode: item.toda_code || "",
+    name: item.name || "",
+    barangay: item.barangay || "Unassigned",
+    status: item.status || "ACTIVE",
+    officers,
+    members: membersArray.map((member) => ({
+      id: member.id,
+      fullName: member.full_name || "",
+      status: member.status || "ACTIVE",
+    })),
+  };
+}
+
+function buildOfficersPayload(form) {
+  return [
+    { position: "PRESIDENT", full_name: form.president },
+    { position: "VICE_PRESIDENT", full_name: form.vicePresident },
+    { position: "SECRETARY", full_name: form.secretary },
+    { position: "TREASURER", full_name: form.treasurer },
+  ].filter((item) => item.full_name?.trim());
+}
+
+function buildMembersPayload(form) {
+  return form.members
+    .map((member) => String(member || "").trim())
+    .filter(Boolean)
+    .map((full_name) => ({ full_name }));
+}
 
 export default function Settings() {
   const [tab, setTab] = useState("general");
-  const [incentive, setIncentive] = useState(10);
-  const [violations, setViolations] = useState(violationsMaster);
+  const currentUser = getCurrentUserFromToken();
+  const isSuperAdmin = currentUser?.role === "SUPER_ADMIN";
 
-  const [barangayToda, setBarangayToda] = useState(
-    lucenaBarangays.map((barangay) => ({
-      barangay,
-      todas: [],
-    }))
-  );
+  const [showCreateAdmin, setShowCreateAdmin] = useState(false);
+  const [createdAdmin, setCreatedAdmin] = useState(null);
+
+  const [adminForm, setAdminForm] = useState({
+    username: "",
+    temporaryPassword: "",
+    role: "ADMIN",
+  });
+
+  const [violations, setViolations] = useState([]);
+  const [todas, setTodas] = useState([]);
+  const [commissionRate, setCommissionRate] = useState(0.2);
+
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   const [violationForm, setViolationForm] = useState({
     code: "",
@@ -90,14 +155,14 @@ export default function Settings() {
     group: "",
     offenseLevel: 1,
     penalty: "",
+    status: "ACTIVE",
   });
 
-  const [editingViolationCode, setEditingViolationCode] = useState(null);
-  const [editingToda, setEditingToda] = useState(null);
+  const [editingViolationId, setEditingViolationId] = useState(null);
+  const [editingTodaId, setEditingTodaId] = useState(null);
 
   const [memberForm, setMemberForm] = useState({
-    barangay: "",
-    todaName: "",
+    todaId: null,
     memberName: "",
   });
 
@@ -109,39 +174,79 @@ export default function Settings() {
     secretary: "",
     treasurer: "",
     members: emptyMembers(),
+    status: "ACTIVE",
   });
 
-  const totalTodas = useMemo(
-    () => barangayToda.reduce((sum, b) => sum + b.todas.length, 0),
-    [barangayToda]
+  async function fetchSettingsData() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const [violationRes, todaRes, commissionRes] = await Promise.all([
+        apiRequest("/violation-types"),
+        apiRequest("/todas"),
+        apiRequest("/settings/commission-rate"),
+      ]);
+
+      setViolations((violationRes.data || []).map(normalizeViolation));
+      setTodas((todaRes.data || []).map(normalizeToda));
+      setCommissionRate(Number(commissionRes.data?.commission_rate ?? 0.2));
+    } catch (err) {
+      setError(err.message || "Failed to load settings data");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchSettingsData();
+  }, []);
+
+  const activeViolations = useMemo(
+    () => violations.filter((item) => item.status !== "INACTIVE"),
+    [violations]
   );
 
-  const totalMembers = useMemo(
-    () =>
-      barangayToda.reduce(
-        (sum, b) =>
-          sum +
-          b.todas.reduce((todaSum, t) => {
-            const officersCount = Object.values(t.officers || {}).filter(
-              (name) => name && name.trim() !== ""
-            ).length;
-
-            return todaSum + officersCount + (t.members?.length || 0);
-          }, 0),
-        0
-      ),
-    [barangayToda]
+  const activeTodas = useMemo(
+    () => todas.filter((item) => item.status !== "INACTIVE"),
+    [todas]
   );
+
+  const barangayToda = useMemo(() => {
+    return lucenaBarangays.map((barangay) => ({
+      barangay,
+      todas: activeTodas.filter((toda) => toda.barangay === barangay),
+    }));
+  }, [activeTodas]);
+
+  const totalMembers = useMemo(() => {
+    return activeTodas.reduce((sum, toda) => {
+      const officersCount = Object.values(toda.officers || {}).filter(Boolean).length;
+      const membersCount = (toda.members || []).filter((m) => m.status !== "INACTIVE").length;
+      return sum + officersCount + membersCount;
+    }, 0);
+  }, [activeTodas]);
 
   const groupedViolations = useMemo(() => {
-    return violations.reduce((acc, item) => {
+    return activeViolations.reduce((acc, item) => {
       if (!acc[item.group]) acc[item.group] = [];
       acc[item.group].push(item);
       return acc;
     }, {});
-  }, [violations]);
+  }, [activeViolations]);
 
-  const resetTodaForm = (barangay = lucenaBarangays[0]) => {
+  function resetViolationForm() {
+    setViolationForm({
+      code: "",
+      name: "",
+      group: "",
+      offenseLevel: 1,
+      penalty: "",
+      status: "ACTIVE",
+    });
+  }
+
+  function resetTodaForm(barangay = lucenaBarangays[0]) {
     setTodaForm({
       barangay,
       name: "",
@@ -150,236 +255,320 @@ export default function Settings() {
       secretary: "",
       treasurer: "",
       members: emptyMembers(),
+      status: "ACTIVE",
     });
-  };
+  }
 
-  const tabBtn = (key, label, icon) => (
-    <button
-      type="button"
-      className={`btn rounded-4 px-3 py-2 ${
-        tab === key ? "btn-primary shadow-sm" : "btn-light border"
-      }`}
-      onClick={() => setTab(key)}
-    >
-      <i className={`bi ${icon} me-2`} />
-      {label}
-    </button>
-  );
+  function tabBtn(key, label, icon) {
+    return (
+      <button
+        type="button"
+        className={`btn rounded-4 px-3 py-2 ${
+          tab === key ? "btn-primary shadow-sm" : "btn-light border"
+        }`}
+        onClick={() => setTab(key)}
+      >
+        <i className={`bi ${icon} me-2`} />
+        {label}
+      </button>
+    );
+  }
 
-  const addViolation = () => {
-    if (!violationForm.code || !violationForm.name || !violationForm.group) return;
+  async function createAdminAccount() {
+    try {
+      if (!isSuperAdmin) {
+        alert("Only SUPER_ADMIN can create admin accounts.");
+        return;
+      }
 
-    setViolations([
-      ...violations,
-      {
-        ...violationForm,
-        offenseLevel: Number(violationForm.offenseLevel || 1),
-        penalty: Number(violationForm.penalty || 0),
-      },
-    ]);
+      if (!adminForm.username.trim()) {
+        alert("Username is required.");
+        return;
+      }
 
-    setViolationForm({
-      code: "",
-      name: "",
-      group: "",
-      offenseLevel: 1,
-      penalty: "",
-    });
-  };
+      if (!adminForm.temporaryPassword.trim()) {
+        alert("Temporary password is required.");
+        return;
+      }
 
-  const startEditViolation = (violation) => {
-    setEditingViolationCode(violation.code);
+      if (adminForm.temporaryPassword.trim().length < 6) {
+        alert("Temporary password must be at least 6 characters.");
+        return;
+      }
+
+      setSaving(true);
+      setError("");
+      setCreatedAdmin(null);
+
+      const res = await apiRequest("/admins", {
+        method: "POST",
+        body: JSON.stringify({
+          username: adminForm.username.trim(),
+          temporary_password: adminForm.temporaryPassword.trim(),
+          role: adminForm.role,
+        }),
+      });
+
+      setCreatedAdmin(res.data || null);
+
+      setAdminForm({
+        username: "",
+        temporaryPassword: "",
+        role: "ADMIN",
+      });
+
+      alert("Account created successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to create account");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveCommissionRate() {
+    try {
+      setSaving(true);
+      setError("");
+      await apiRequest("/settings/commission-rate", {
+        method: "PUT",
+        body: JSON.stringify({ commission_rate: Number(commissionRate || 0) }),
+      });
+      await fetchSettingsData();
+      alert("Incentive rate saved successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to save incentive rate");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addViolation() {
+    try {
+      if (!violationForm.code || !violationForm.name || !violationForm.group) {
+        alert("Please complete code, violation name, and group.");
+        return;
+      }
+
+      setSaving(true);
+      setError("");
+      await apiRequest("/violation-types", {
+        method: "POST",
+        body: JSON.stringify({
+          violation_code: violationForm.code,
+          name: violationForm.name,
+          group_name: violationForm.group,
+          offense_level: Number(violationForm.offenseLevel || 1),
+          penalty_amount: Number(violationForm.penalty || 0),
+          status: violationForm.status || "ACTIVE",
+        }),
+      });
+
+      resetViolationForm();
+      await fetchSettingsData();
+      alert("Violation added successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to add violation");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startEditViolation(violation) {
+    setEditingViolationId(violation.id);
     setViolationForm({
       code: violation.code,
       name: violation.name,
       group: violation.group,
       offenseLevel: violation.offenseLevel,
       penalty: violation.penalty,
+      status: violation.status || "ACTIVE",
     });
-  };
+  }
 
-  const saveEditViolation = () => {
-    setViolations((prev) =>
-      prev.map((v) =>
-        v.code === editingViolationCode
-          ? {
-              ...violationForm,
-              offenseLevel: Number(violationForm.offenseLevel || 1),
-              penalty: Number(violationForm.penalty || 0),
-            }
-          : v
-      )
-    );
+  async function saveEditViolation() {
+    try {
+      setSaving(true);
+      setError("");
+      await apiRequest(`/violation-types/${editingViolationId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          violation_code: violationForm.code,
+          name: violationForm.name,
+          group_name: violationForm.group,
+          offense_level: Number(violationForm.offenseLevel || 1),
+          penalty_amount: Number(violationForm.penalty || 0),
+          status: violationForm.status || "ACTIVE",
+        }),
+      });
 
-    setEditingViolationCode(null);
-    setViolationForm({
-      code: "",
-      name: "",
-      group: "",
-      offenseLevel: 1,
-      penalty: "",
-    });
-  };
+      setEditingViolationId(null);
+      resetViolationForm();
+      await fetchSettingsData();
+      alert("Violation updated successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to update violation");
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  const cancelEditViolation = () => {
-    setEditingViolationCode(null);
-    setViolationForm({
-      code: "",
-      name: "",
-      group: "",
-      offenseLevel: 1,
-      penalty: "",
-    });
-  };
+  function cancelEditViolation() {
+    setEditingViolationId(null);
+    resetViolationForm();
+  }
 
-  const deleteViolation = (code) => {
-    setViolations(violations.filter((v) => v.code !== code));
-  };
+  async function deleteViolation(id) {
+    if (!confirm("Mark this violation as inactive?")) return;
 
-  const addToda = () => {
-    if (!todaForm.barangay || !todaForm.name) return;
+    try {
+      setSaving(true);
+      setError("");
+      await apiRequest(`/violation-types/${id}`, { method: "DELETE" });
+      await fetchSettingsData();
+      alert("Violation marked as inactive.");
+    } catch (err) {
+      setError(err.message || "Failed to delete violation");
+    } finally {
+      setSaving(false);
+    }
+  }
 
-    const filteredMembers = todaForm.members
-      .map((m) => m.trim())
-      .filter((m) => m !== "");
+  async function addToda() {
+    try {
+      if (!todaForm.barangay || !todaForm.name) {
+        alert("Please select barangay and enter TODA name.");
+        return;
+      }
 
-    setBarangayToda((prev) =>
-      prev.map((b) =>
-        b.barangay === todaForm.barangay
-          ? {
-              ...b,
-              todas: [
-                ...b.todas,
-                {
-                  name: todaForm.name,
-                  officers: {
-                    president: todaForm.president,
-                    vicePresident: todaForm.vicePresident,
-                    secretary: todaForm.secretary,
-                    treasurer: todaForm.treasurer,
-                  },
-                  members: filteredMembers,
-                },
-              ],
-            }
-          : b
-      )
-    );
+      setSaving(true);
+      setError("");
+      await apiRequest("/todas", {
+        method: "POST",
+        body: JSON.stringify({
+          name: todaForm.name,
+          barangay: todaForm.barangay,
+          status: todaForm.status || "ACTIVE",
+          officers: buildOfficersPayload(todaForm),
+          members: buildMembersPayload(todaForm),
+        }),
+      });
 
-    resetTodaForm(todaForm.barangay);
-  };
+      resetTodaForm(todaForm.barangay);
+      await fetchSettingsData();
+      alert("TODA added successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to add TODA");
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  const startEditToda = (barangay, toda) => {
-    const existingMembers = toda.members || [];
+  function startEditToda(toda) {
+    const existingMembers = (toda.members || [])
+      .filter((member) => member.status !== "INACTIVE")
+      .map((member) => member.fullName);
 
-    const minimumLines = 5;
-    const totalLines = Math.max(minimumLines, existingMembers.length);
-
-    const currentMembers = [
-      ...existingMembers,
-      ...Array(totalLines - existingMembers.length).fill(""),
-    ];
-
-    setEditingToda({
-      barangay,
-      todaName: toda.name,
-    });
-
+    setEditingTodaId(toda.id);
     setTodaForm({
-      barangay,
+      barangay: toda.barangay,
       name: toda.name || "",
       president: toda.officers?.president || "",
       vicePresident: toda.officers?.vicePresident || "",
       secretary: toda.officers?.secretary || "",
       treasurer: toda.officers?.treasurer || "",
-      members: currentMembers,
+      members: [
+        ...existingMembers,
+        ...Array(Math.max(5, existingMembers.length) - existingMembers.length).fill(""),
+      ],
+      status: toda.status || "ACTIVE",
     });
-  };
+  }
 
-  const saveEditToda = () => {
-    if (!editingToda) return;
+  async function saveEditToda() {
+    try {
+      setSaving(true);
+      setError("");
+      await apiRequest(`/todas/${editingTodaId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name: todaForm.name,
+          barangay: todaForm.barangay,
+          status: todaForm.status || "ACTIVE",
+          officers: buildOfficersPayload(todaForm),
+          members: buildMembersPayload(todaForm),
+        }),
+      });
 
-    const filteredMembers = todaForm.members
-      .map((m) => m.trim())
-      .filter((m) => m !== "");
+      const currentBarangay = todaForm.barangay;
+      setEditingTodaId(null);
+      resetTodaForm(currentBarangay);
+      await fetchSettingsData();
+      alert("TODA updated successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to update TODA");
+    } finally {
+      setSaving(false);
+    }
+  }
 
+  function cancelEditToda() {
     const currentBarangay = todaForm.barangay;
-
-    setBarangayToda((prev) =>
-      prev.map((b) =>
-        b.barangay === editingToda.barangay
-          ? {
-              ...b,
-              todas: b.todas.map((t) =>
-                t.name === editingToda.todaName
-                  ? {
-                      ...t,
-                      name: todaForm.name,
-                      officers: {
-                        president: todaForm.president,
-                        vicePresident: todaForm.vicePresident,
-                        secretary: todaForm.secretary,
-                        treasurer: todaForm.treasurer,
-                      },
-                      members: filteredMembers,
-                    }
-                  : t
-              ),
-            }
-          : b
-      )
-    );
-
-    setEditingToda(null);
+    setEditingTodaId(null);
     resetTodaForm(currentBarangay);
-  };
+  }
 
-  const cancelEditToda = () => {
-    const currentBarangay = todaForm.barangay;
-    setEditingToda(null);
-    resetTodaForm(currentBarangay);
-  };
+  async function addMemberToToda(todaId) {
+    try {
+      if (!memberForm.memberName.trim()) return;
 
-  const addMemberToToda = (barangay, todaName) => {
-    if (!memberForm.memberName.trim()) return;
+      setSaving(true);
+      setError("");
+      await apiRequest(`/todas/${todaId}/members`, {
+        method: "POST",
+        body: JSON.stringify({ full_name: memberForm.memberName.trim() }),
+      });
 
-    setBarangayToda((prev) =>
-      prev.map((b) =>
-        b.barangay === barangay
-          ? {
-              ...b,
-              todas: b.todas.map((t) =>
-                t.name === todaName
-                  ? {
-                      ...t,
-                      members: [...(t.members || []), memberForm.memberName.trim()],
-                    }
-                  : t
-              ),
-            }
-          : b
-      )
-    );
+      setMemberForm({ todaId: null, memberName: "" });
+      await fetchSettingsData();
+      alert("Member added successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to add member");
+    } finally {
+      setSaving(false);
+    }
+  }
 
-    setMemberForm({
-      barangay: "",
-      todaName: "",
-      memberName: "",
-    });
-  };
+  async function deleteToda(id) {
+    if (!confirm("Mark this TODA as inactive?")) return;
 
-  const deleteToda = (barangay, todaName) => {
-    setBarangayToda((prev) =>
-      prev.map((b) =>
-        b.barangay === barangay
-          ? {
-              ...b,
-              todas: b.todas.filter((t) => t.name !== todaName),
-            }
-          : b
-      )
-    );
-  };
+    try {
+      setSaving(true);
+      setError("");
+      await apiRequest(`/todas/${id}`, { method: "DELETE" });
+      await fetchSettingsData();
+      alert("TODA marked as inactive.");
+    } catch (err) {
+      setError(err.message || "Failed to delete TODA");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteTodaMember(memberId) {
+    if (!confirm("Remove this member from TODA?")) return;
+
+    try {
+      setSaving(true);
+      setError("");
+      await apiRequest(`/todas/members/${memberId}`, { method: "DELETE" });
+      await fetchSettingsData();
+      alert("Member removed successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to remove member");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="container-fluid py-3">
@@ -390,44 +579,26 @@ export default function Settings() {
             Manage TIRS configuration, violations, penalties, barangays, and TODA records.
           </div>
         </div>
+
+        <button
+          className="btn btn-light border rounded-4 px-3"
+          type="button"
+          onClick={fetchSettingsData}
+          disabled={loading || saving}
+        >
+          <i className="bi bi-arrow-clockwise me-2" />
+          Refresh
+        </button>
       </div>
 
+      {error && <div className="alert alert-danger rounded-4 py-2">{error}</div>}
+      {loading && <div className="alert alert-info rounded-4 py-2">Loading settings...</div>}
+
       <div className="row g-3 mb-4">
-        <div className="col-12 col-md-3">
-          <div className="card border-0 shadow-sm rounded-4">
-            <div className="card-body">
-              <div className="text-muted small">Violations</div>
-              <div className="h4 fw-bold mb-0">{violations.length}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-12 col-md-3">
-          <div className="card border-0 shadow-sm rounded-4">
-            <div className="card-body">
-              <div className="text-muted small">Barangays</div>
-              <div className="h4 fw-bold mb-0">{barangayToda.length}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-12 col-md-3">
-          <div className="card border-0 shadow-sm rounded-4">
-            <div className="card-body">
-              <div className="text-muted small">TODAs</div>
-              <div className="h4 fw-bold mb-0">{totalTodas}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-12 col-md-3">
-          <div className="card border-0 shadow-sm rounded-4">
-            <div className="card-body">
-              <div className="text-muted small">Numbers of Drivers</div>
-              <div className="h4 fw-bold mb-0">{totalMembers}</div>
-            </div>
-          </div>
-        </div>
+        <SummaryCard label="Violations" value={activeViolations.length} />
+        <SummaryCard label="Barangays" value={lucenaBarangays.length} />
+        <SummaryCard label="TODAs" value={activeTodas.length} />
+        <SummaryCard label="Officers / Members" value={totalMembers} />
       </div>
 
       <div className="d-flex flex-wrap gap-2 mb-3">
@@ -437,24 +608,201 @@ export default function Settings() {
       </div>
 
       {tab === "general" && (
-        <div className="card border-0 shadow-sm rounded-4">
-          <div className="card-body p-4">
-            <h5 className="fw-bold mb-1">General Settings</h5>
-            <div className="text-muted mb-4">Basic system-wide configuration.</div>
+        <div className="row g-3">
+          <div className="col-12 col-xl-5">
+            <div className="card border-0 shadow-sm rounded-4 h-100">
+              <div className="card-body p-4">
+                <h5 className="fw-bold mb-1">General Settings</h5>
+                <div className="text-muted mb-4">
+                  Basic system-wide configuration and account tools.
+                </div>
 
-            <div className="row g-3 align-items-end">
-              <div className="col-12 col-md-4">
-                <label className="form-label fw-semibold">Incentive Rate (%)</label>
-                <input
-                  type="number"
-                  className="form-control rounded-3"
-                  value={incentive}
-                  onChange={(e) => setIncentive(e.target.value)}
-                />
+                {isSuperAdmin ? (
+                  <>
+                    <div className="d-flex justify-content-between align-items-center gap-3 p-3 border rounded-4 bg-light">
+                      <div>
+                        <div className="fw-semibold">Admin/User Account Creation</div>
+                        <div className="text-muted small">
+                          Create temporary login credentials for authorized system users.
+                        </div>
+                      </div>
+
+                      <button
+                        className="btn btn-primary rounded-4 px-3"
+                        type="button"
+                        onClick={() => setShowCreateAdmin((prev) => !prev)}
+                        disabled={saving}
+                      >
+                        {showCreateAdmin ? "Close" : "+ Create Account"}
+                      </button>
+                    </div>
+
+                    {showCreateAdmin && (
+                      <div className="border rounded-4 p-3 mt-3">
+                        <h6 className="fw-bold mb-3">Create Admin/User Account</h6>
+
+                        <div className="mb-3">
+                          <label className="form-label fw-semibold">Username</label>
+                          <input
+                            className="form-control rounded-3"
+                            value={adminForm.username}
+                            onChange={(e) =>
+                              setAdminForm({
+                                ...adminForm,
+                                username: e.target.value,
+                              })
+                            }
+                            placeholder="Example: admin.juan"
+                          />
+                        </div>
+
+                        <div className="mb-3">
+                          <label className="form-label fw-semibold">
+                            Temporary Password
+                          </label>
+                          <input
+                            className="form-control rounded-3"
+                            value={adminForm.temporaryPassword}
+                            onChange={(e) =>
+                              setAdminForm({
+                                ...adminForm,
+                                temporaryPassword: e.target.value,
+                              })
+                            }
+                            placeholder="Example: TIRS-123456"
+                          />
+                          <div className="form-text">
+                            User will be required to complete setup on first login.
+                          </div>
+                        </div>
+
+                        <div className="mb-3">
+                          <label className="form-label fw-semibold">Role</label>
+                          <select
+                            className="form-select rounded-3"
+                            value={adminForm.role}
+                            onChange={(e) =>
+                              setAdminForm({
+                                ...adminForm,
+                                role: e.target.value,
+                              })
+                            }
+                          >
+                            <option value="SUPER_ADMIN">Super Admin</option>
+                            <option value="ADMIN">Admin</option>
+                            <option value="STAFF">Staff</option>
+                            <option value="VIEWER">Viewer</option>
+                          </select>
+                        </div>
+
+                        <button
+                          className="btn btn-primary rounded-3 w-100"
+                          type="button"
+                          onClick={createAdminAccount}
+                          disabled={saving}
+                        >
+                          {saving ? "Creating..." : "Create Account"}
+                        </button>
+                      </div>
+                    )}
+
+                    {createdAdmin && (
+                      <div className="alert alert-success rounded-4 mt-3 mb-0">
+                        <div className="fw-bold mb-2">Account Created</div>
+
+                        <div className="small">
+                          <strong>Admin Code:</strong>{" "}
+                          {createdAdmin.admin_code || "—"}
+                        </div>
+
+                        <div className="small">
+                          <strong>Username:</strong> {createdAdmin.username || "—"}
+                        </div>
+
+                        <div className="small">
+                          <strong>Temporary Password:</strong>{" "}
+                          {createdAdmin.temporary_password || "—"}
+                        </div>
+
+                        <div className="small">
+                          <strong>Role:</strong> {createdAdmin.role || "—"}
+                        </div>
+
+                        <div className="text-muted small mt-2">
+                          Copy these credentials before leaving this page.
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="alert alert-light border rounded-4 mb-0">
+                    <div className="fw-semibold">General Settings</div>
+                    <div className="text-muted small">
+                      No general settings configured for your role yet.
+                    </div>
+                  </div>
+                )}
               </div>
+            </div>
+          </div>
 
-              <div className="col-12 col-md-auto">
-                <button className="btn btn-primary rounded-3 px-4">Save Changes</button>
+          <div className="col-12 col-xl-7">
+            <div className="card border-0 shadow-sm rounded-4 h-100">
+              <div className="card-body p-4">
+                <h5 className="fw-bold mb-1">Preferences</h5>
+                <div className="text-muted mb-4">
+                  Display and system preferences can be added here later.
+                </div>
+
+                <div className="row g-3">
+                  <div className="col-12 col-md-6">
+                    <div className="border rounded-4 p-3 h-100 bg-light">
+                      <div className="fw-semibold mb-1">Dark Mode</div>
+                      <div className="text-muted small mb-3">
+                        Planned UI preference for light/dark display.
+                      </div>
+                      <button className="btn btn-light border rounded-3" disabled>
+                        Coming Soon
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="col-12 col-md-6">
+                    <div className="border rounded-4 p-3 h-100 bg-light">
+                      <div className="fw-semibold mb-1">Default Table Size</div>
+                      <div className="text-muted small mb-3">
+                        Planned setting for default rows shown in tables.
+                      </div>
+                      <button className="btn btn-light border rounded-3" disabled>
+                        Coming Soon
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="col-12 col-md-6">
+                    <div className="border rounded-4 p-3 h-100 bg-light">
+                      <div className="fw-semibold mb-1">Print Layout</div>
+                      <div className="text-muted small mb-3">
+                        Planned default print format setting.
+                      </div>
+                      <button className="btn btn-light border rounded-3" disabled>
+                        Coming Soon
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="col-12 col-md-6">
+                    <div className="border rounded-4 p-3 h-100 bg-light">
+                      <div className="fw-semibold mb-1">System Labels</div>
+                      <div className="text-muted small mb-3">
+                        Planned office/system naming settings.
+                      </div>
+                      <button className="btn btn-light border rounded-3" disabled>
+                        Coming Soon
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -464,95 +812,57 @@ export default function Settings() {
       {tab === "violations" && (
         <div className="row g-3">
           <div className="col-12 col-xl-4">
-            <div className="card border-0 shadow-sm rounded-4 h-100">
+            <div className="card border-0 shadow-sm rounded-4 mb-3">
               <div className="card-body p-4">
-                <h5 className="fw-bold mb-1">
-                  {editingViolationCode ? "Edit Violation" : "Add Violation"}
-                </h5>
-                <div className="text-muted mb-4">Create a violation type with penalty amount.</div>
+                <h5 className="fw-bold mb-1">{editingViolationId ? "Edit Violation" : "Add Violation"}</h5>
+                <div className="text-muted mb-4">Create or update a violation type with penalty amount.</div>
 
-                <div className="mb-3">
-                  <label className="form-label fw-semibold">Code</label>
-                  <input
-                    className="form-control rounded-3"
-                    value={violationForm.code}
-                    onChange={(e) =>
-                      setViolationForm({ ...violationForm, code: e.target.value })
-                    }
-                    placeholder="Example: 5028"
-                  />
-                </div>
-
-                <div className="mb-3">
-                  <label className="form-label fw-semibold">Violation Name</label>
-                  <input
-                    className="form-control rounded-3"
-                    value={violationForm.name}
-                    onChange={(e) =>
-                      setViolationForm({ ...violationForm, name: e.target.value })
-                    }
-                    placeholder="Example: Illegal Parking – 1st Offense"
-                  />
-                </div>
-
-                <div className="mb-3">
-                  <label className="form-label fw-semibold">Group</label>
-                  <input
-                    className="form-control rounded-3"
-                    value={violationForm.group}
-                    onChange={(e) =>
-                      setViolationForm({ ...violationForm, group: e.target.value })
-                    }
-                    placeholder="Example: Illegal Parking"
-                  />
-                </div>
+                <FormInput label="Code" value={violationForm.code} onChange={(value) => setViolationForm({ ...violationForm, code: value })} placeholder="Example: 5028" />
+                <FormInput label="Violation Name" value={violationForm.name} onChange={(value) => setViolationForm({ ...violationForm, name: value })} placeholder="Example: Illegal Parking – 1st Offense" />
+                <FormInput label="Group" value={violationForm.group} onChange={(value) => setViolationForm({ ...violationForm, group: value })} placeholder="Example: Illegal Parking" />
 
                 <div className="row g-2">
                   <div className="col-6">
-                    <label className="form-label fw-semibold">Offense Level</label>
-                    <input
-                      type="number"
-                      className="form-control rounded-3"
-                      value={violationForm.offenseLevel}
-                      onChange={(e) =>
-                        setViolationForm({
-                          ...violationForm,
-                          offenseLevel: e.target.value,
-                        })
-                      }
-                    />
+                    <FormInput label="Offense Level" type="number" value={violationForm.offenseLevel} onChange={(value) => setViolationForm({ ...violationForm, offenseLevel: value })} />
                   </div>
-
                   <div className="col-6">
-                    <label className="form-label fw-semibold">Penalty</label>
-                    <input
-                      type="number"
-                      className="form-control rounded-3"
-                      value={violationForm.penalty}
-                      onChange={(e) =>
-                        setViolationForm({ ...violationForm, penalty: e.target.value })
-                      }
-                      placeholder="₱"
-                    />
+                    <FormInput label="Penalty" type="number" value={violationForm.penalty} onChange={(value) => setViolationForm({ ...violationForm, penalty: value })} placeholder="₱" />
                   </div>
                 </div>
 
-                {editingViolationCode ? (
+                {editingViolationId ? (
                   <div className="d-flex gap-2 mt-4">
-                    <button className="btn btn-primary rounded-3 w-100" onClick={saveEditViolation}>
-                      Save Edit
-                    </button>
-
-                    <button className="btn btn-light border rounded-3 w-100" onClick={cancelEditViolation}>
-                      Cancel
-                    </button>
+                    <button className="btn btn-primary rounded-3 w-100" onClick={saveEditViolation} disabled={saving}>Save Edit</button>
+                    <button className="btn btn-light border rounded-3 w-100" onClick={cancelEditViolation} disabled={saving}>Cancel</button>
                   </div>
                 ) : (
-                  <button className="btn btn-primary rounded-3 w-100 mt-4" onClick={addViolation}>
+                  <button className="btn btn-primary rounded-3 w-100 mt-4" onClick={addViolation} disabled={saving}>
                     <i className="bi bi-plus-circle me-2" />
                     Add Violation
                   </button>
                 )}
+              </div>
+            </div>
+
+            <div className="card border-0 shadow-sm rounded-4">
+              <div className="card-body p-4">
+                <h5 className="fw-bold mb-1">Incentive Rate</h5>
+                <div className="text-muted mb-4">Default commission rate used for apprehension enforcer incentives.</div>
+
+                <label className="form-label fw-semibold">Incentive Rate (%)</label>
+                <input
+                  type="number"
+                  className="form-control rounded-3"
+                  value={Number(commissionRate || 0) * 100}
+                  onChange={(e) => setCommissionRate(Number(e.target.value || 0) / 100)}
+                  min="0"
+                  max="100"
+                  step="0.01"
+                />
+
+                <button className="btn btn-primary rounded-3 w-100 mt-4" onClick={saveCommissionRate} disabled={saving} type="button">
+                  Save Incentive Rate
+                </button>
               </div>
             </div>
           </div>
@@ -561,62 +871,57 @@ export default function Settings() {
             <div className="card border-0 shadow-sm rounded-4">
               <div className="card-body p-4">
                 <h5 className="fw-bold mb-1">Violations & Penalties</h5>
-                <div className="text-muted mb-4">
-                  Grouped by violation type and offense level.
-                </div>
+                <div className="text-muted mb-4">Grouped by violation type and offense level.</div>
 
-                {Object.entries(groupedViolations).map(([group, rows]) => (
-                  <div key={group} className="mb-4">
-                    <div className="d-flex align-items-center gap-2 mb-2">
-                      <span className="badge rounded-pill bg-primary-subtle text-primary-emphasis px-3 py-2">
-                        {group}
-                      </span>
-                      <div className="flex-grow-1 border-top" />
-                    </div>
+                {Object.entries(groupedViolations).length === 0 ? (
+                  <div className="text-muted py-4">No violations found.</div>
+                ) : (
+                  Object.entries(groupedViolations).map(([group, rows]) => (
+                    <div key={group} className="mb-4">
+                      <div className="d-flex align-items-center gap-2 mb-2">
+                        <span className="badge rounded-pill bg-primary-subtle text-primary-emphasis px-3 py-2">{group}</span>
+                        <div className="flex-grow-1 border-top" />
+                      </div>
 
-                    <div className="table-responsive">
-                      <table className="table table-hover align-middle">
-                        <thead className="table-light">
-                          <tr>
-                            <th>Code</th>
-                            <th>Violation</th>
-                            <th className="text-center">Offense</th>
-                            <th className="text-end">Penalty</th>
-                            <th className="text-end">Action</th>
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {rows.map((v) => (
-                            <tr key={v.code}>
-                              <td className="fw-semibold">{v.code}</td>
-                              <td>{v.name}</td>
-                              <td className="text-center">{v.offenseLevel}</td>
-                              <td className="text-end fw-semibold">{money(v.penalty)}</td>
-                              <td className="text-end">
-                                <div className="d-flex justify-content-end gap-2">
-                                  <button
-                                    className="btn btn-sm btn-light"
-                                    onClick={() => startEditViolation(v)}
-                                  >
-                                    Edit
-                                  </button>
-
-                                  <button
-                                    className="btn btn-sm btn-light text-danger"
-                                    onClick={() => deleteViolation(v.code)}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
+                      <div className="table-responsive">
+                        <table className="table table-hover align-middle" style={{ tableLayout: "fixed", minWidth: 850 }}>
+                          <colgroup>
+                            <col style={{ width: "100px" }} />
+                            <col style={{ width: "390px" }} />
+                            <col style={{ width: "100px" }} />
+                            <col style={{ width: "130px" }} />
+                            <col style={{ width: "130px" }} />
+                          </colgroup>
+                          <thead className="table-light">
+                            <tr>
+                              <th>Code</th>
+                              <th>Violation</th>
+                              <th className="text-center">Offense</th>
+                              <th className="text-end">Penalty</th>
+                              <th className="text-end">Action</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {rows.map((v) => (
+                              <tr key={v.id || v.code}>
+                                <td className="fw-semibold">{v.code}</td>
+                                <td title={v.name} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.name}</td>
+                                <td className="text-center">{v.offenseLevel}</td>
+                                <td className="text-end fw-semibold">{money(v.penalty)}</td>
+                                <td className="text-end">
+                                  <div className="d-flex justify-content-end gap-2">
+                                    <button className="btn btn-sm btn-light" onClick={() => startEditViolation(v)} disabled={saving}>Edit</button>
+                                    <button className="btn btn-sm btn-light text-danger" onClick={() => deleteViolation(v.id)} disabled={saving}>Delete</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -628,92 +933,27 @@ export default function Settings() {
           <div className="col-12 col-xl-4">
             <div className="card border-0 shadow-sm rounded-4 h-100">
               <div className="card-body p-4">
-                <h5 className="fw-bold mb-1">
-                  {editingToda ? "Edit TODA" : "Add TODA"}
-                </h5>
-                <div className="text-muted mb-4">
-                  Assign TODA organization under a Lucena barangay.
-                </div>
+                <h5 className="fw-bold mb-1">{editingTodaId ? "Edit TODA" : "Add TODA"}</h5>
+                <div className="text-muted mb-4">Assign TODA organization under a Lucena barangay.</div>
 
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Barangay</label>
-                  <select
-                    className="form-select rounded-3"
-                    value={todaForm.barangay}
-                    onChange={(e) =>
-                      setTodaForm({ ...todaForm, barangay: e.target.value })
-                    }
-                    disabled={!!editingToda}
-                  >
-                    {lucenaBarangays.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
+                  <select className="form-select rounded-3" value={todaForm.barangay} onChange={(e) => setTodaForm({ ...todaForm, barangay: e.target.value })}>
+                    {lucenaBarangays.map((b) => <option key={b} value={b}>{b}</option>)}
                   </select>
                 </div>
 
-                <div className="mb-3">
-                  <label className="form-label fw-semibold">TODA Name</label>
-                  <input
-                    className="form-control rounded-3"
-                    value={todaForm.name}
-                    onChange={(e) =>
-                      setTodaForm({ ...todaForm, name: e.target.value })
-                    }
-                    placeholder="Example: Gulang-Gulang TODA"
-                  />
-                </div>
+                <FormInput label="TODA Name" value={todaForm.name} onChange={(value) => setTodaForm({ ...todaForm, name: value })} placeholder="Example: Gulang-Gulang TODA" />
 
                 <div className="row g-2">
-                  <div className="col-12 col-md-6">
-                    <label className="form-label fw-semibold">President</label>
-                    <input
-                      className="form-control rounded-3"
-                      value={todaForm.president}
-                      onChange={(e) =>
-                        setTodaForm({ ...todaForm, president: e.target.value })
-                      }
-                    />
-                  </div>
-
-                  <div className="col-12 col-md-6">
-                    <label className="form-label fw-semibold">Vice President</label>
-                    <input
-                      className="form-control rounded-3"
-                      value={todaForm.vicePresident}
-                      onChange={(e) =>
-                        setTodaForm({ ...todaForm, vicePresident: e.target.value })
-                      }
-                    />
-                  </div>
-
-                  <div className="col-12 col-md-6">
-                    <label className="form-label fw-semibold">Secretary</label>
-                    <input
-                      className="form-control rounded-3"
-                      value={todaForm.secretary}
-                      onChange={(e) =>
-                        setTodaForm({ ...todaForm, secretary: e.target.value })
-                      }
-                    />
-                  </div>
-
-                  <div className="col-12 col-md-6">
-                    <label className="form-label fw-semibold">Treasurer</label>
-                    <input
-                      className="form-control rounded-3"
-                      value={todaForm.treasurer}
-                      onChange={(e) =>
-                        setTodaForm({ ...todaForm, treasurer: e.target.value })
-                      }
-                    />
-                  </div>
+                  <div className="col-12 col-md-6"><FormInput label="President" value={todaForm.president} onChange={(value) => setTodaForm({ ...todaForm, president: value })} /></div>
+                  <div className="col-12 col-md-6"><FormInput label="Vice President" value={todaForm.vicePresident} onChange={(value) => setTodaForm({ ...todaForm, vicePresident: value })} /></div>
+                  <div className="col-12 col-md-6"><FormInput label="Secretary" value={todaForm.secretary} onChange={(value) => setTodaForm({ ...todaForm, secretary: value })} /></div>
+                  <div className="col-12 col-md-6"><FormInput label="Treasurer" value={todaForm.treasurer} onChange={(value) => setTodaForm({ ...todaForm, treasurer: value })} /></div>
                 </div>
 
                 <div className="mt-3">
                   <label className="form-label fw-semibold">Other Members</label>
-
                   {todaForm.members.map((member, index) => (
                     <input
                       key={index}
@@ -722,29 +962,20 @@ export default function Settings() {
                       onChange={(e) => {
                         const updatedMembers = [...todaForm.members];
                         updatedMembers[index] = e.target.value;
-
-                        setTodaForm({
-                          ...todaForm,
-                          members: updatedMembers,
-                        });
+                        setTodaForm({ ...todaForm, members: updatedMembers });
                       }}
                       placeholder={`Member ${index + 1}`}
                     />
                   ))}
                 </div>
 
-                {editingToda ? (
+                {editingTodaId ? (
                   <div className="d-flex gap-2 mt-4">
-                    <button className="btn btn-primary rounded-3 w-100" onClick={saveEditToda}>
-                      Save Edit
-                    </button>
-
-                    <button className="btn btn-light border rounded-3 w-100" onClick={cancelEditToda}>
-                      Cancel
-                    </button>
+                    <button className="btn btn-primary rounded-3 w-100" onClick={saveEditToda} disabled={saving}>Save Edit</button>
+                    <button className="btn btn-light border rounded-3 w-100" onClick={cancelEditToda} disabled={saving}>Cancel</button>
                   </div>
                 ) : (
-                  <button className="btn btn-primary rounded-3 w-100 mt-4" onClick={addToda}>
+                  <button className="btn btn-primary rounded-3 w-100 mt-4" onClick={addToda} disabled={saving}>
                     <i className="bi bi-plus-circle me-2" />
                     Add TODA
                   </button>
@@ -757,151 +988,69 @@ export default function Settings() {
             <div className="card border-0 shadow-sm rounded-4">
               <div className="card-body p-4">
                 <h5 className="fw-bold mb-1">Barangay & TODA Directory</h5>
-                <div className="text-muted mb-4">
-                  Barangays are separated by dividers. TODA officers and members are listed under each barangay.
-                </div>
+                <div className="text-muted mb-4">Barangays are separated by dividers. TODA officers and members are listed under each barangay.</div>
 
                 <div className="accordion" id="barangayAccordion">
                   {barangayToda.map((b, index) => (
                     <div className="accordion-item border rounded-4 mb-2 overflow-hidden" key={b.barangay}>
                       <h2 className="accordion-header">
-                        <button
-                          className={`accordion-button ${index !== 0 ? "collapsed" : ""}`}
-                          type="button"
-                          data-bs-toggle="collapse"
-                          data-bs-target={`#barangay-${index}`}
-                        >
+                        <button className={`accordion-button ${index !== 0 ? "collapsed" : ""}`} type="button" data-bs-toggle="collapse" data-bs-target={`#barangay-${index}`}>
                           <div className="d-flex justify-content-between align-items-center w-100 pe-3">
                             <span className="fw-semibold">{b.barangay}</span>
-                            <span className="badge bg-secondary-subtle text-secondary-emphasis rounded-pill">
-                              {b.todas.length} TODA
-                            </span>
+                            <span className="badge bg-secondary-subtle text-secondary-emphasis rounded-pill">{b.todas.length} TODA</span>
                           </div>
                         </button>
                       </h2>
 
-                      <div
-                        id={`barangay-${index}`}
-                        className={`accordion-collapse collapse ${index === 0 ? "show" : ""}`}
-                        data-bs-parent="#barangayAccordion"
-                      >
+                      <div id={`barangay-${index}`} className={`accordion-collapse collapse ${index === 0 ? "show" : ""}`} data-bs-parent="#barangayAccordion">
                         <div className="accordion-body">
                           {b.todas.length === 0 ? (
-                            <div className="text-muted small py-2">
-                              No TODA added under this barangay yet.
-                            </div>
+                            <div className="text-muted small py-2">No TODA added under this barangay yet.</div>
                           ) : (
                             b.todas.map((toda) => (
-                              <div className="border rounded-4 p-3 mb-3" key={toda.name}>
+                              <div className="border rounded-4 p-3 mb-3" key={toda.id}>
                                 <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
                                   <div>
                                     <div className="fw-bold">{toda.name}</div>
-                                    <div className="text-muted small">{b.barangay}</div>
+                                    <div className="text-muted small">{toda.todaCode || "No code"} • {b.barangay}</div>
                                   </div>
 
                                   <div className="d-flex gap-2">
-                                    <button
-                                      className="btn btn-sm btn-light"
-                                      onClick={() => startEditToda(b.barangay, toda)}
-                                    >
-                                      Edit
-                                    </button>
-
-                                    <button
-                                      className="btn btn-sm btn-light text-danger"
-                                      onClick={() => deleteToda(b.barangay, toda.name)}
-                                    >
-                                      Delete
-                                    </button>
+                                    <button className="btn btn-sm btn-light" onClick={() => startEditToda(toda)} disabled={saving}>Edit</button>
+                                    <button className="btn btn-sm btn-light text-danger" onClick={() => deleteToda(toda.id)} disabled={saving}>Delete</button>
                                   </div>
                                 </div>
 
                                 <div className="row g-2 mb-3">
-                                  <div className="col-12 col-md-6">
-                                    <div className="small text-muted">President</div>
-                                    <div className="fw-semibold">{toda.officers.president || "—"}</div>
-                                  </div>
-
-                                  <div className="col-12 col-md-6">
-                                    <div className="small text-muted">Vice President</div>
-                                    <div className="fw-semibold">{toda.officers.vicePresident || "—"}</div>
-                                  </div>
-
-                                  <div className="col-12 col-md-6">
-                                    <div className="small text-muted">Secretary</div>
-                                    <div className="fw-semibold">{toda.officers.secretary || "—"}</div>
-                                  </div>
-
-                                  <div className="col-12 col-md-6">
-                                    <div className="small text-muted">Treasurer</div>
-                                    <div className="fw-semibold">{toda.officers.treasurer || "—"}</div>
-                                  </div>
+                                  <OfficerView label="President" value={toda.officers.president} />
+                                  <OfficerView label="Vice President" value={toda.officers.vicePresident} />
+                                  <OfficerView label="Secretary" value={toda.officers.secretary} />
+                                  <OfficerView label="Treasurer" value={toda.officers.treasurer} />
                                 </div>
 
                                 <div className="d-flex justify-content-between align-items-center gap-2 mb-2">
                                   <div className="small text-muted">Members</div>
-
-                                  <button
-                                    className="btn btn-sm btn-outline-primary rounded-pill"
-                                    onClick={() =>
-                                      setMemberForm({
-                                        barangay: b.barangay,
-                                        todaName: toda.name,
-                                        memberName: "",
-                                      })
-                                    }
-                                  >
-                                    + Add Member
-                                  </button>
+                                  <button className="btn btn-sm btn-outline-primary rounded-pill" onClick={() => setMemberForm({ todaId: toda.id, memberName: "" })} disabled={saving}>+ Add Member</button>
                                 </div>
 
-                                {memberForm.barangay === b.barangay &&
-                                  memberForm.todaName === toda.name && (
-                                    <div className="d-flex gap-2 mb-3">
-                                      <input
-                                        className="form-control form-control-sm rounded-3"
-                                        placeholder="Member name"
-                                        value={memberForm.memberName}
-                                        onChange={(e) =>
-                                          setMemberForm({
-                                            ...memberForm,
-                                            memberName: e.target.value,
-                                          })
-                                        }
-                                      />
+                                {memberForm.todaId === toda.id && (
+                                  <div className="d-flex gap-2 mb-3">
+                                    <input className="form-control form-control-sm rounded-3" placeholder="Member name" value={memberForm.memberName} onChange={(e) => setMemberForm({ ...memberForm, memberName: e.target.value })} />
+                                    <button className="btn btn-sm btn-primary rounded-3" onClick={() => addMemberToToda(toda.id)} disabled={saving}>Save</button>
+                                    <button className="btn btn-sm btn-light border rounded-3" onClick={() => setMemberForm({ todaId: null, memberName: "" })} disabled={saving}>Cancel</button>
+                                  </div>
+                                )}
 
-                                      <button
-                                        className="btn btn-sm btn-primary rounded-3"
-                                        onClick={() => addMemberToToda(b.barangay, toda.name)}
-                                      >
-                                        Save
-                                      </button>
-
-                                      <button
-                                        className="btn btn-sm btn-light border rounded-3"
-                                        onClick={() =>
-                                          setMemberForm({
-                                            barangay: "",
-                                            todaName: "",
-                                            memberName: "",
-                                          })
-                                        }
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
-                                  )}
-
-                                {toda.members.length === 0 ? (
+                                {toda.members.filter((m) => m.status !== "INACTIVE").length === 0 ? (
                                   <div className="text-muted small">No members listed.</div>
                                 ) : (
                                   <div className="d-flex flex-wrap gap-2">
-                                    {toda.members.map((m, memberIndex) => (
-                                      <span
-                                        key={`${m}-${memberIndex}`}
-                                        className="badge bg-light text-dark border rounded-pill px-3 py-2"
-                                      >
-                                        {m}
+                                    {toda.members.filter((m) => m.status !== "INACTIVE").map((m) => (
+                                      <span key={m.id} className="badge bg-light text-dark border rounded-pill px-3 py-2 d-inline-flex align-items-center gap-2">
+                                        {m.fullName}
+                                        <button className="btn btn-sm p-0 text-danger border-0 bg-transparent" type="button" onClick={() => deleteTodaMember(m.id)} title="Remove member" disabled={saving}>
+                                          <i className="bi bi-x-circle" />
+                                        </button>
                                       </span>
                                     ))}
                                   </div>
@@ -914,12 +1063,48 @@ export default function Settings() {
                     </div>
                   ))}
                 </div>
-
               </div>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function SummaryCard({ label, value }) {
+  return (
+    <div className="col-12 col-md-3">
+      <div className="card border-0 shadow-sm rounded-4">
+        <div className="card-body">
+          <div className="text-muted small">{label}</div>
+          <div className="h4 fw-bold mb-0">{value}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FormInput({ label, value, onChange, placeholder = "", type = "text" }) {
+  return (
+    <div className="mb-3">
+      <label className="form-label fw-semibold">{label}</label>
+      <input
+        type={type}
+        className="form-control rounded-3"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+function OfficerView({ label, value }) {
+  return (
+    <div className="col-12 col-md-6">
+      <div className="small text-muted">{label}</div>
+      <div className="fw-semibold">{value || "—"}</div>
     </div>
   );
 }
