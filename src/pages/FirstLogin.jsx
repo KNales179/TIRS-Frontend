@@ -40,8 +40,8 @@ export default function FirstLogin() {
       return setError("New password is required.");
     }
 
-    if (newPassword.length < 6) {
-      return setError("New password must be at least 6 characters.");
+    if (newPassword.length < 8) {
+      return setError("New password must be at least 8 characters.");
     }
 
     if (newPassword !== confirmPassword) {

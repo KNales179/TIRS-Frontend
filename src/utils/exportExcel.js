@@ -33,6 +33,18 @@ function safe(value) {
   return value === undefined || value === null || value === "" ? "—" : value;
 }
 
+function getId(value) {
+  if (!value) return "";
+  if (typeof value === "object") {
+    return String(value.id || value._id || "");
+  }
+  return String(value);
+}
+
+function sameId(a, b) {
+  return getId(a) === getId(b);
+}
+
 function money(value) {
   if (value === undefined || value === null || value === "") return 0;
   const number = Number(value || 0);
@@ -115,12 +127,19 @@ function getVehicleChassis(vehicle) {
 
 function getFranchiseForVehicle(driver, vehicle) {
   const franchises = driver?.franchises || [];
+  const vehicleId = getId(vehicle?.id || vehicle?._id);
 
-  if (!vehicle?.id) return null;
+  if (!vehicleId) return null;
 
   return (
-    franchises.find((f) => Number(f.vehicle_id) === Number(vehicle.id)) ||
-    franchises.find((f) => Number(f.vehicleIndex) === Number(vehicle.index)) ||
+    franchises.find((f) =>
+      sameId(f.vehicle_id || f.vehicleId || f.vehicle, vehicleId)
+    ) ||
+    franchises.find((f) =>
+      f.vehicleIndex !== undefined &&
+      vehicle.index !== undefined &&
+      String(f.vehicleIndex) === String(vehicle.index)
+    ) ||
     null
   );
 }
@@ -188,9 +207,15 @@ function getLatestPayment(apprehension) {
 }
 
 function filterApprehensionsByDrivers(apprehensions, drivers) {
-  const driverIds = new Set(drivers.map((driver) => Number(driver.id)).filter(Boolean));
+  const driverIds = new Set(
+    drivers
+      .map((driver) => getId(driver.id || driver._id))
+      .filter(Boolean)
+  );
 
-  return apprehensions.filter((item) => driverIds.has(Number(item.driver_id)));
+  return apprehensions.filter((item) =>
+    driverIds.has(getId(item.driver_id))
+  );
 }
 
 async function fetchAllApprehensionsSafely() {
@@ -221,7 +246,9 @@ async function imageUrlToBase64(url) {
 }
 
 function getDriverStats(driver, apprehensions) {
-  const related = apprehensions.filter((item) => Number(item.driver_id) === Number(driver.id));
+  const related = apprehensions.filter((item) =>
+    sameId(item.driver_id, driver.id || driver._id)
+  );
   const transactions = related.flatMap((item) => item.transactions || []);
 
   const totalPaid = transactions.reduce(
@@ -272,10 +299,9 @@ function buildVehicleRows(drivers, apprehensions) {
     const vehicles = driver.vehicles || [];
 
     vehicles.forEach((vehicle) => {
-      const vehicleApprehensions = apprehensions.filter(
-        (item) => Number(item.vehicle_id) === Number(vehicle.id)
+      const vehicleApprehensions = apprehensions.filter((item) =>
+        sameId(item.vehicle_id, vehicle.id || vehicle._id)
       );
-
       rows.push({
         driverCode: getDriverCode(driver),
         driverName: getDriverName(driver),
@@ -346,7 +372,12 @@ function buildTransactionRows(apprehensions) {
         paymentMethod: safe(transaction.payment_method),
         orNumber: safe(transaction.or_number),
         status: safe(normalizeStatus(apprehension.status)),
-        tfroPersonnel: safe(transaction.created_by),
+        tfroPersonnel: safe(
+          transaction.created_by ||
+            transaction.created_by_name ||
+            transaction.created_by_admin_name ||
+            transaction.admin_name
+        ),
         remarks: safe(transaction.remarks || apprehension.remarks),
       });
     });

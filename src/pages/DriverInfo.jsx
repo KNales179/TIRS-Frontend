@@ -26,6 +26,32 @@ async function apiRequest(path, options = {}) {
   return data;
 }
 
+async function uploadFileRequest(file, payload) {
+  const token = getToken();
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("category", payload.category);
+  formData.append("related_type", payload.related_type);
+  formData.append("related_id", payload.related_id);
+
+  const res = await fetch(`${API_BASE_URL}/uploads`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(data?.message || "Upload failed");
+  }
+
+  return data;
+}
+
 function normalizeDriverType(type) {
   const t = String(type || "").trim().toUpperCase();
 
@@ -77,9 +103,76 @@ function splitName(fullName = "") {
   };
 }
 
-function normalizeBackendDriver(driver) {
+function normalizeBackendVehicle(vehicle) {
   return {
-    id: driver.id,
+    id: vehicle.id || vehicle._id,
+    plateNo: vehicle.plateNo || vehicle.plate_number || "",
+    motor: vehicle.motor || vehicle.motor_number || "",
+    chassis: vehicle.chassis || vehicle.chassis_number || "",
+    modelMake: vehicle.modelMake || vehicle.model_make || "",
+    color: vehicle.color || "",
+    status: vehicle.status || "ACTIVE",
+    raw: vehicle,
+  };
+}
+
+function getFranchiseVehicleRef(franchise) {
+  const ref =
+    franchise.vehicle_id ||
+    franchise.vehicleId ||
+    franchise.vehicle ||
+    franchise.vehicle_id_ref;
+
+  if (ref && typeof ref === "object") {
+    return ref.id || ref._id;
+  }
+
+  return ref || "";
+}
+
+function normalizeBackendFranchise(franchise, vehicles = []) {
+  const vehicleRef = getFranchiseVehicleRef(franchise);
+
+  const vehicleIndex = vehicles.findIndex(
+    (vehicle) => String(vehicle.id) === String(vehicleRef)
+  );
+
+  return {
+    id: franchise.id || franchise._id,
+    vehicle_id: vehicleRef,
+    vehicleIndex: vehicleIndex >= 0 ? vehicleIndex : undefined,
+
+    number: franchise.number || franchise.franchise_number || "",
+    franchise_type: franchise.franchise_type || franchise.type || "",
+    toda_name: franchise.toda_name || franchise.todaName || "",
+    route_area: franchise.route_area || franchise.routeArea || "",
+
+    registration_date: franchise.registration_date
+      ? String(franchise.registration_date).slice(0, 10)
+      : franchise.registrationDate
+      ? String(franchise.registrationDate).slice(0, 10)
+      : "",
+
+    expiry_date: franchise.expiry_date
+      ? String(franchise.expiry_date).slice(0, 10)
+      : franchise.expiryDate
+      ? String(franchise.expiryDate).slice(0, 10)
+      : "",
+
+    status: franchise.status || "ACTIVE",
+    raw: franchise,
+  };
+}
+
+function normalizeBackendDriver(driver) {
+  const vehicles = (driver.vehicles || []).map(normalizeBackendVehicle);
+
+  const franchises = (driver.franchises || []).map((franchise) =>
+    normalizeBackendFranchise(franchise, vehicles)
+  );
+
+  return {
+    id: driver.id || driver._id,
     driver_code: driver.driver_code,
     type: driver.classification,
     classification: driver.classification,
@@ -95,8 +188,8 @@ function normalizeBackendDriver(driver) {
     license_number: driver.license_number || "",
     license_expiry: driver.license_expiry || "",
 
-    vehicles: driver.vehicles || [],
-    franchises: driver.franchises || [],
+    vehicles,
+    franchises,
     transactions: driver.transactions || [],
   };
 }
@@ -384,7 +477,13 @@ export default function DriverInfo() {
 
     if (!vehicle?.id) return null;
 
-    return franchises.find((f) => Number(f.vehicle_id) === Number(vehicle.id)) || null;
+    return (
+      franchises.find(
+        (franchise) =>
+          String(franchise.vehicle_id) === String(vehicle.id) ||
+          Number(franchise.vehicleIndex) === Number(index)
+      ) || null
+    );
   }
 
   function setField(key) {
@@ -434,8 +533,68 @@ export default function DriverInfo() {
     window.print();
   }
 
-  function handlePhotoUpload() {
-    alert("Photo upload is not connected yet. We will add multer later.");
+  async function handlePhotoUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setSaving(true);
+      setError("");
+
+      const uploadResponse = await uploadFileRequest(file, {
+        category: "PROFILE_PHOTO",
+        related_type: "DRIVER",
+        related_id: id,
+      });
+
+      const photoUrl =
+        uploadResponse?.data?.secure_url ||
+        uploadResponse?.data?.file_url ||
+        "";
+
+      if (!photoUrl) {
+        throw new Error("Upload succeeded but no photo URL was returned.");
+      }
+
+      const nameParts = splitName(draft.name);
+
+      await apiRequest(`/drivers/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          classification: draft.classification || "REGULAR",
+          operator_name: draft.operatorName || null,
+          first_name: nameParts.first_name,
+          middle_name: nameParts.middle_name,
+          last_name: nameParts.last_name,
+          suffix: nameParts.suffix,
+          contact_number: draft.contact || null,
+          address: draft.address || null,
+          birth_date: draft.birth_date || null,
+          gender: draft.gender || null,
+          license_number: draft.license_number || null,
+          license_expiry: draft.license_expiry || null,
+          photo_url: photoUrl,
+          status: "ACTIVE",
+        }),
+      });
+
+      setDraft((prev) => ({
+        ...prev,
+        photoUrl,
+      }));
+
+      setDriver((prev) => ({
+        ...prev,
+        photoUrl,
+      }));
+
+      alert("Profile photo uploaded successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to upload profile photo");
+    } finally {
+      setSaving(false);
+      e.target.value = "";
+    }
   }
 
   function handleFranchiseChange(e) {
@@ -765,7 +924,13 @@ export default function DriverInfo() {
                     title="Upload Photo"
                   >
                     <i className="bi bi-plus-lg" style={{ fontSize: 20 }} />
-                    <input type="file" accept="image/*" hidden onChange={handlePhotoUpload} />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      disabled={saving}
+                      onChange={handlePhotoUpload}
+                    />
                   </label>
                 </div>
 
@@ -863,14 +1028,6 @@ export default function DriverInfo() {
                         Showing real apprehension records connected to this driver/profile.
                       </div>
                     </div>
-
-                    <button
-                      className="btn btn-sm btn-primary rounded-4 px-3 no-print"
-                      type="button"
-                      onClick={handleOpenAddApprehension}
-                    >
-                      + Add Apprehension
-                    </button>
                   </div>
 
                   <div className="table-responsive">
@@ -1122,5 +1279,20 @@ function AddFranchiseModal({
 
       <div className="modal-backdrop fade show" />
     </>
+  );
+}
+
+function FormInput({ label, value, onChange, placeholder = "", type = "text" }) {
+  return (
+    <div className="col-md-6">
+      <label className="form-label small text-muted">{label}</label>
+      <input
+        type={type}
+        className="form-control rounded-4"
+        placeholder={placeholder}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
   );
 }

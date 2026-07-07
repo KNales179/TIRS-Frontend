@@ -29,6 +29,32 @@ async function apiRequest(path, options = {}) {
   return data;
 }
 
+async function uploadFileRequest(file, payload) {
+  const token = getToken();
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("category", payload.category);
+  formData.append("related_type", payload.related_type);
+  formData.append("related_id", payload.related_id);
+
+  const res = await fetch(`${API_BASE_URL}/uploads`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(data?.message || "Upload failed");
+  }
+
+  return data;
+}
+
 function Avatar({ name }) {
   const initials = (name || "?")
     .split(" ")
@@ -438,51 +464,114 @@ export default function Profiles() {
     try {
       setError("");
 
-      const requestBody = payload;
+      const { photoFile, ...driverPayload } = payload;
 
       const response = await apiRequest("/drivers", {
         method: "POST",
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          ...driverPayload,
+          photo_url: null,
+        }),
       });
-
-      setShowDriverModal(false);
 
       const newDriverId =
         response?.data?.id ||
-        response?.id;
+        response?.data?._id ||
+        response?.id ||
+        response?._id;
 
-      if (newDriverId) {
-        nav(`/profiles/${newDriverId}`);
+      if (!newDriverId) {
+        setShowDriverModal(false);
+        await fetchDrivers();
         return;
       }
 
-      await fetchDrivers();
+      if (photoFile) {
+        const uploadResponse = await uploadFileRequest(photoFile, {
+          category: "PROFILE_PHOTO",
+          related_type: "DRIVER",
+          related_id: newDriverId,
+        });
+
+        const photoUrl =
+          uploadResponse?.data?.secure_url ||
+          uploadResponse?.data?.file_url ||
+          "";
+
+        if (photoUrl) {
+          await apiRequest(`/drivers/${newDriverId}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              ...driverPayload,
+              photo_url: photoUrl,
+            }),
+          });
+        }
+      }
+
+      setShowDriverModal(false);
+      nav(`/profiles/${newDriverId}`);
     } catch (err) {
       setError(err.message || "Failed to create driver");
     }
   }
-
   async function handleEnforcerSubmit(payload) {
     try {
       setError("");
 
+      const { photoFile } = payload;
       const nameParts = splitFullName(payload.name);
 
-      const requestBody = {
+      const enforcerPayload = {
         first_name: nameParts.first_name,
         middle_name: nameParts.middle_name,
         last_name: nameParts.last_name,
         suffix: null,
         contact_number: payload.contact || null,
         address: payload.address || null,
-        photo_url: payload.photoUrl || null,
+        photo_url: null,
         status: "ACTIVE",
       };
 
-      await apiRequest("/enforcers", {
+      const response = await apiRequest("/enforcers", {
         method: "POST",
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(enforcerPayload),
       });
+
+      const newEnforcerId =
+        response?.data?.id ||
+        response?.data?._id ||
+        response?.id ||
+        response?._id;
+
+      if (!newEnforcerId) {
+        setShowEnforcerModal(false);
+        await fetchEnforcers();
+        return;
+      }
+
+      if (photoFile) {
+        const uploadResponse = await uploadFileRequest(photoFile, {
+          category: "PROFILE_PHOTO",
+          related_type: "ENFORCER",
+          related_id: newEnforcerId,
+        });
+
+        const photoUrl =
+          uploadResponse?.data?.secure_url ||
+          uploadResponse?.data?.file_url ||
+          "";
+
+        if (photoUrl) {
+          await apiRequest(`/enforcers/${newEnforcerId}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              ...enforcerPayload,
+              photo_url: photoUrl,
+            }),
+          });
+        }
+      }
 
       setShowEnforcerModal(false);
       await fetchEnforcers();

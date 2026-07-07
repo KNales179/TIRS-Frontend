@@ -44,6 +44,32 @@ async function apiRequest(path, options = {}) {
   return data;
 }
 
+async function uploadFileRequest(file, payload) {
+  const token = getToken();
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("category", payload.category);
+  formData.append("related_type", payload.related_type);
+  formData.append("related_id", payload.related_id);
+
+  const res = await fetch(`${API_BASE_URL}/uploads`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(data?.message || "Upload failed");
+  }
+
+  return data;
+}
+
 function money(n) {
   return new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -71,6 +97,10 @@ function displayStatus(status) {
   return "New";
 }
 
+function sameId(a, b) {
+  return String(a || "") === String(b || "");
+}
+
 function fullName(person) {
   return [
     person?.first_name,
@@ -85,15 +115,30 @@ function fullName(person) {
 function normalizeDriver(driver) {
   return {
     ...driver,
+    id: driver.id || driver._id,
     name: fullName(driver),
-    vehicles: driver.vehicles || [],
+    vehicles: (driver.vehicles || []).map((vehicle) => ({
+      ...vehicle,
+      id: vehicle.id || vehicle._id,
+      plateNo: vehicle.plateNo || vehicle.plate_number || "",
+      modelMake: vehicle.modelMake || vehicle.model_make || "",
+      motor: vehicle.motor || vehicle.motor_number || "",
+    })),
   };
 }
 
 function normalizeEnforcer(enforcer) {
   return {
     ...enforcer,
+    id: enforcer.id || enforcer._id,
     name: fullName(enforcer),
+  };
+}
+
+function normalizeViolationType(item) {
+  return {
+    ...item,
+    id: item.id || item._id,
   };
 }
 
@@ -207,6 +252,7 @@ export default function Violations() {
 
   const [paymentRow, setPaymentRow] = useState(null);
   const [paymentForm, setPaymentForm] = useState(getEmptyPaymentForm());
+  const [paymentFile, setPaymentFile] = useState(null);
 
   const [reasonModal, setReasonModal] = useState(null);
   const [reasonText, setReasonText] = useState("");
@@ -231,7 +277,7 @@ export default function Violations() {
       setEnforcers(
         (enforcerRes.data || enforcerRes.enforcers || []).map(normalizeEnforcer)
       );
-      setViolationTypes(violationTypeRes.data || []);
+      setViolationTypes((violationTypeRes.data || []).map(normalizeViolationType));
     } catch (err) {
       setError(err.message || "Failed to load violations");
     } finally {
@@ -414,12 +460,12 @@ export default function Violations() {
   }
 
   function buildPayload() {
-    const selectedDriver = drivers.find(
-      (driver) => Number(driver.id) === Number(formData.driver_id)
+    const selectedDriver = drivers.find((driver) =>
+      sameId(driver.id, formData.driver_id)
     );
 
-    const selectedVehicle = selectedDriver?.vehicles?.find(
-      (vehicle) => Number(vehicle.id) === Number(formData.vehicle_id)
+    const selectedVehicle = selectedDriver?.vehicles?.find((vehicle) =>
+      sameId(vehicle.id, formData.vehicle_id)
     );
 
     const resolvedViolatorType =
@@ -433,20 +479,24 @@ export default function Violations() {
 
     return {
       violator_type: resolvedViolatorType,
+
       driver_id:
         formData.violator_type === "UNREGISTERED_PERSON"
           ? null
-          : Number(formData.driver_id),
-      vehicle_id: formData.vehicle_id ? Number(formData.vehicle_id) : null,
+          : formData.driver_id || null,
+
+      vehicle_id: formData.vehicle_id || null,
 
       unregistered_name:
         formData.violator_type === "UNREGISTERED_PERSON"
           ? formData.unregistered_name
           : null,
+
       unregistered_contact:
         formData.violator_type === "UNREGISTERED_PERSON"
           ? formData.unregistered_contact
           : null,
+
       unregistered_address:
         formData.violator_type === "UNREGISTERED_PERSON"
           ? formData.unregistered_address
@@ -454,8 +504,8 @@ export default function Violations() {
 
       apprehension_date: formData.apprehension_date,
       location: formData.location,
-      violation_type_ids: formData.violation_type_ids.map(Number),
-      enforcer_ids: formData.enforcer_ids.map(Number),
+      violation_type_ids: formData.violation_type_ids,
+      enforcer_ids: formData.enforcer_ids,
       commission_rate: Number(formData.commission_rate || 0),
       remarks: formData.remarks || null,
     };
@@ -548,11 +598,13 @@ export default function Violations() {
   function handleOpenPayment(row) {
     setPaymentRow(row);
     setPaymentForm(getEmptyPaymentForm(row.officialPenalty));
+    setPaymentFile(null);
   }
 
   function handleClosePayment() {
     setPaymentRow(null);
     setPaymentForm(getEmptyPaymentForm());
+    setPaymentFile(null);
   }
 
   async function handleRecordPayment() {
@@ -570,7 +622,7 @@ export default function Violations() {
         return;
       }
 
-      await apiRequest(`/apprehensions/${paymentRow.id}/payment`, {
+      const paymentResponse = await apiRequest(`/apprehensions/${paymentRow.id}/payment`, {
         method: "POST",
         body: JSON.stringify({
           ...paymentForm,
@@ -578,10 +630,38 @@ export default function Violations() {
         }),
       });
 
+      const transactions = paymentResponse?.data?.transactions || [];
+
+      const paymentTransaction =
+        transactions.find(
+          (item) =>
+            item.action_taken === "PAYMENT_RECORDED" &&
+            String(item.or_number || "") === String(paymentForm.or_number || "")
+        ) ||
+        transactions.find((item) => item.action_taken === "PAYMENT_RECORDED") ||
+        transactions[0];
+
+      if (paymentFile) {
+        if (!paymentTransaction?.id) {
+          throw new Error("Payment was saved, but transaction ID was not returned for receipt upload.");
+        }
+
+        await uploadFileRequest(paymentFile, {
+          category: "PAYMENT_RECEIPT",
+          related_type: "TRANSACTION",
+          related_id: paymentTransaction.id,
+        });
+      }
+
       await fetchPageData();
       handleClosePayment();
       setViewRow(null);
-      alert("Payment recorded successfully.");
+
+      alert(
+        paymentFile
+          ? "Payment and receipt uploaded successfully."
+          : "Payment recorded successfully."
+      );
     } catch (err) {
       setError(err.message || "Failed to record payment");
     } finally {
@@ -857,6 +937,8 @@ export default function Violations() {
         row={paymentRow}
         form={paymentForm}
         setForm={setPaymentForm}
+        receiptFile={paymentFile}
+        setReceiptFile={setPaymentFile}
         saving={saving}
         onClose={handleClosePayment}
         onSave={handleRecordPayment}
@@ -1066,18 +1148,18 @@ function ApprehensionFormModal({
 
   if (!show) return null;
 
-  const selectedDriver = drivers.find(
-    (driver) => Number(driver.id) === Number(formData.driver_id)
+  const selectedDriver = drivers.find((driver) =>
+    sameId(driver.id, formData.driver_id)
   );
 
   const availableVehicles = selectedDriver?.vehicles || [];
 
-  const selectedVehicle = availableVehicles.find(
-    (vehicle) => Number(vehicle.id) === Number(formData.vehicle_id)
+  const selectedVehicle = availableVehicles.find((vehicle) =>
+    sameId(vehicle.id, formData.vehicle_id)
   );
 
   const selectedViolationTypes = violationTypes.filter((item) =>
-    formData.violation_type_ids.map(Number).includes(Number(item.id))
+    formData.violation_type_ids.some((id) => sameId(id, item.id))
   );
 
   const totalPenalty = selectedViolationTypes.reduce(
@@ -1141,12 +1223,12 @@ function ApprehensionFormModal({
 
   function toggleArrayValue(key, id) {
     setFormData((prev) => {
-      const current = prev[key].map(Number);
-      const numericId = Number(id);
+      const current = prev[key].map(String);
+      const stringId = String(id);
 
-      const next = current.includes(numericId)
-        ? current.filter((item) => item !== numericId)
-        : [...current, numericId];
+      const next = current.includes(stringId)
+        ? current.filter((item) => item !== stringId)
+        : [...current, stringId];
 
       return {
         ...prev,
@@ -1269,8 +1351,7 @@ function ApprehensionFormModal({
                           style={{ maxHeight: 190, overflowY: "auto" }}
                         >
                           {driverResults.map((driver) => {
-                            const selected =
-                              Number(formData.driver_id) === Number(driver.id);
+                            const selected = sameId(formData.driver_id, driver.id);
 
                             return (
                               <button
@@ -1366,9 +1447,9 @@ function ApprehensionFormModal({
                       style={{ maxHeight: 270, overflowY: "auto" }}
                     >
                       {violationResults.map((item) => {
-                        const checked = formData.violation_type_ids
-                          .map(Number)
-                          .includes(Number(item.id));
+                        const checked = formData.violation_type_ids.some((id) =>
+                          sameId(id, item.id)
+                        );
 
                         return (
                           <label
@@ -1444,9 +1525,9 @@ function ApprehensionFormModal({
                       style={{ maxHeight: 270, overflowY: "auto" }}
                     >
                       {enforcerResults.map((enforcer) => {
-                        const checked = formData.enforcer_ids
-                          .map(Number)
-                          .includes(Number(enforcer.id));
+                        const checked = formData.enforcer_ids.some((id) =>
+                          sameId(id, enforcer.id)
+                        );
 
                         return (
                           <label
@@ -1781,7 +1862,17 @@ function ViolationViewModal({
   );
 }
 
-function PaymentModal({ show, row, form, setForm, saving, onClose, onSave }) {
+function PaymentModal({
+  show,
+  row,
+  form,
+  setForm,
+  receiptFile,
+  setReceiptFile,
+  saving,
+  onClose,
+  onSave,
+}) {
   if (!show || !row) return null;
 
   function setField(key, value) {
@@ -1853,6 +1944,29 @@ function PaymentModal({ show, row, form, setForm, saving, onClose, onSave }) {
                   onChange={(v) => setField("remarks", v)}
                   col="col-12"
                 />
+                <div className="col-12">
+                  <label className="form-label small text-muted">
+                    Upload Receipt / Proof of Payment
+                  </label>
+
+                  <input
+                    type="file"
+                    className="form-control rounded-4 bg-white"
+                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                    onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
+                    disabled={saving}
+                  />
+
+                  <div className="small text-muted mt-2">
+                    Allowed: image, PDF, DOCX, XLSX, TXT. Max file size follows backend setting.
+                  </div>
+
+                  {receiptFile && (
+                    <div className="small text-success mt-1">
+                      Selected: {receiptFile.name}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

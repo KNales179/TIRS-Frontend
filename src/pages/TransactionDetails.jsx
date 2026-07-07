@@ -26,6 +26,32 @@ async function apiRequest(path, options = {}) {
   return data;
 }
 
+async function uploadFileRequest(file, payload) {
+  const token = getToken();
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("category", payload.category);
+  formData.append("related_type", payload.related_type);
+  formData.append("related_id", payload.related_id);
+
+  const res = await fetch(`${API_BASE_URL}/uploads`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(data?.message || "Upload failed");
+  }
+
+  return data;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -58,6 +84,10 @@ function openPrintWindow(title, htmlBody) {
             padding: 28px;
             color: #111;
             background: #fff;
+          }
+
+          .no-print {
+            display: none !important;
           }
 
           .print-header {
@@ -201,7 +231,8 @@ function openIndexCardPrintWindow({ driver, transactionRows, headlineSrc }) {
   const franchises = driver?.franchises || [];
   const primaryFranchise = franchises[0] || null;
   const primaryToda = primaryFranchise?.toda_name || driver?.toda || "";
-  const primaryFranchiseNo = primaryFranchise?.number || primaryFranchise?.franchise_number || "";
+  const primaryFranchiseNo =
+    primaryFranchise?.number || primaryFranchise?.franchise_number || "";
 
   const vehicleRows = vehicles.length
     ? vehicles
@@ -569,6 +600,22 @@ function formatDate(value) {
   return String(value).slice(0, 10);
 }
 
+function formatDateTime(value) {
+  if (!value) return "—";
+  return String(value).replace("T", " ").slice(0, 16);
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+
+  if (!size) return "—";
+
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function getViolationText(apprehension) {
   const violations = apprehension?.violations || [];
 
@@ -602,12 +649,34 @@ function flattenTransactions(apprehensions) {
       paymentMethod: transaction.payment_method || "—",
       orNumber: transaction.or_number || "—",
       status: normalizeStatus(apprehension.status),
-      tfroPersonnel: transaction.created_by || "—",
+      tfroPersonnel:
+        transaction.created_by ||
+        transaction.created_by_name ||
+        transaction.created_by_admin_name ||
+        transaction.admin_name ||
+        "—",
       remarks: transaction.remarks || apprehension.remarks || "—",
       raw: transaction,
       apprehension,
     }));
   });
+}
+
+function getUploadUrl(upload) {
+  return upload?.secure_url || upload?.file_url || "";
+}
+
+function getUploadCategoryLabel(category) {
+  const map = {
+    PAYMENT_RECEIPT: "Payment Receipt",
+    TRANSACTION_DOCUMENT: "Transaction Document",
+    APPREHENSION_DOCUMENT: "Apprehension Document",
+    RELEASE_SLIP: "Release Slip",
+    ORDER_OF_PAYMENT: "Order of Payment",
+    OTHER: "Other",
+  };
+
+  return map[category] || category || "Other";
 }
 
 function StatusBadge({ status }) {
@@ -635,6 +704,17 @@ function SummaryItem({ label, value }) {
   );
 }
 
+function DetailItem({ label, value }) {
+  return (
+    <div className="col-md-6">
+      <div className="bg-light rounded-4 px-3 py-3 h-100">
+        <div className="small text-muted mb-1">{label}</div>
+        <div className="fw-semibold">{value || "—"}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function TransactionDetails() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -646,6 +726,15 @@ export default function TransactionDetails() {
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [transactionUploads, setTransactionUploads] = useState([]);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadSaving, setUploadSaving] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [selectedUploadFile, setSelectedUploadFile] = useState(null);
+  const [uploadCategory, setUploadCategory] = useState("PAYMENT_RECEIPT");
+  const [fileInputKey, setFileInputKey] = useState(1);
 
   async function fetchPageData() {
     try {
@@ -675,6 +764,28 @@ export default function TransactionDetails() {
       setApprehensions([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchTransactionUploads(transactionId) {
+    if (!transactionId) return;
+
+    try {
+      setUploadLoading(true);
+      setUploadError("");
+
+      const response = await apiRequest(
+        `/uploads?related_type=TRANSACTION&related_id=${encodeURIComponent(
+          transactionId
+        )}`
+      );
+
+      setTransactionUploads(response.data || []);
+    } catch (err) {
+      setUploadError(err.message || "Failed to load uploads");
+      setTransactionUploads([]);
+    } finally {
+      setUploadLoading(false);
     }
   }
 
@@ -768,6 +879,84 @@ export default function TransactionDetails() {
     setQuery("");
     setStatusFilter("All");
     setPaymentMethodFilter("All");
+  }
+
+  function handleOpenTransaction(row) {
+    setSelectedTransaction(row);
+    setTransactionUploads([]);
+    setSelectedUploadFile(null);
+    setUploadCategory("PAYMENT_RECEIPT");
+    setUploadError("");
+    setFileInputKey((prev) => prev + 1);
+    fetchTransactionUploads(row.id);
+  }
+
+  function handleCloseTransaction() {
+    setSelectedTransaction(null);
+    setTransactionUploads([]);
+    setSelectedUploadFile(null);
+    setUploadCategory("PAYMENT_RECEIPT");
+    setUploadError("");
+    setFileInputKey((prev) => prev + 1);
+  }
+
+  async function handleUploadTransactionFile() {
+    if (!selectedTransaction?.id) {
+      alert("Transaction ID missing.");
+      return;
+    }
+
+    if (!selectedUploadFile) {
+      alert("Please choose a file first.");
+      return;
+    }
+
+    try {
+      setUploadSaving(true);
+      setUploadError("");
+
+      await uploadFileRequest(selectedUploadFile, {
+        category: uploadCategory,
+        related_type: "TRANSACTION",
+        related_id: selectedTransaction.id,
+      });
+
+      await fetchTransactionUploads(selectedTransaction.id);
+
+      setSelectedUploadFile(null);
+      setFileInputKey((prev) => prev + 1);
+
+      alert("File uploaded successfully.");
+    } catch (err) {
+      setUploadError(err.message || "Failed to upload file");
+    } finally {
+      setUploadSaving(false);
+    }
+  }
+
+  async function handleDeleteUpload(upload) {
+    if (!upload?.id) return;
+
+    if (!confirm("Delete this uploaded file?")) {
+      return;
+    }
+
+    try {
+      setUploadSaving(true);
+      setUploadError("");
+
+      await apiRequest(`/uploads/${upload.id}`, {
+        method: "DELETE",
+      });
+
+      await fetchTransactionUploads(selectedTransaction.id);
+
+      alert("Uploaded file deleted.");
+    } catch (err) {
+      setUploadError(err.message || "Failed to delete upload");
+    } finally {
+      setUploadSaving(false);
+    }
   }
 
   if (loading) {
@@ -937,7 +1126,7 @@ export default function TransactionDetails() {
                     <th className="text-white">Date</th>
                     <th className="text-white">Ticket No.</th>
                     <th className="text-white">Transaction Code</th>
-                    <th className="text-white">Action</th>
+                    <th className="text-white">Transaction Action</th>
                     <th className="text-white">Violation / Case</th>
                     <th className="text-white">Amount Paid</th>
                     <th className="text-white">Payment Method</th>
@@ -945,13 +1134,14 @@ export default function TransactionDetails() {
                     <th className="text-white">Status</th>
                     <th className="text-white">TFRO Personnel</th>
                     <th className="text-white">Remarks</th>
+                    <th className="text-white no-print">Actions</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {filteredRows.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="text-center text-muted py-4">
+                      <td colSpan={12} className="text-center text-muted py-4">
                         No transactions found.
                       </td>
                     </tr>
@@ -973,6 +1163,15 @@ export default function TransactionDetails() {
                         </td>
                         <td>{row.tfroPersonnel}</td>
                         <td>{row.remarks}</td>
+                        <td className="no-print">
+                          <button
+                            className="btn btn-sm btn-outline-primary rounded-4 px-3"
+                            type="button"
+                            onClick={() => handleOpenTransaction(row)}
+                          >
+                            View
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -981,6 +1180,275 @@ export default function TransactionDetails() {
             </div>
           </div>
         </div>
+      </div>
+
+      <TransactionViewModal
+        show={!!selectedTransaction}
+        row={selectedTransaction}
+        uploads={transactionUploads}
+        uploadLoading={uploadLoading}
+        uploadSaving={uploadSaving}
+        uploadError={uploadError}
+        selectedUploadFile={selectedUploadFile}
+        setSelectedUploadFile={setSelectedUploadFile}
+        uploadCategory={uploadCategory}
+        setUploadCategory={setUploadCategory}
+        fileInputKey={fileInputKey}
+        onClose={handleCloseTransaction}
+        onUpload={handleUploadTransactionFile}
+        onDeleteUpload={handleDeleteUpload}
+      />
+    </div>
+  );
+}
+
+function TransactionViewModal({
+  show,
+  row,
+  uploads,
+  uploadLoading,
+  uploadSaving,
+  uploadError,
+  selectedUploadFile,
+  setSelectedUploadFile,
+  uploadCategory,
+  setUploadCategory,
+  fileInputKey,
+  onClose,
+  onUpload,
+  onDeleteUpload,
+}) {
+  if (!show || !row) return null;
+
+  const receiptUploads = uploads.filter((upload) => upload.category === "PAYMENT_RECEIPT");
+  const documentUploads = uploads.filter((upload) => upload.category !== "PAYMENT_RECEIPT");
+
+  return (
+    <>
+      <div className="modal fade show d-block" tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+          <div className="modal-content border-0 rounded-4 shadow">
+            <div className="modal-header border-0">
+              <div>
+                <h5 className="modal-title fw-bold">Transaction Details</h5>
+                <div className="text-muted small">
+                  {row.transactionCode} • Ticket No. {row.ticketNo}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="btn-close"
+                onClick={onClose}
+                disabled={uploadSaving}
+              />
+            </div>
+
+            <div className="modal-body">
+              {uploadError && (
+                <div className="alert alert-danger rounded-4 py-2">
+                  {uploadError}
+                </div>
+              )}
+
+              <div className="bg-white border rounded-4 p-3 mb-3">
+                <div className="fw-bold mb-3">Transaction Information</div>
+
+                <div className="row g-3">
+                  <DetailItem label="Date" value={formatDate(row.date)} />
+                  <DetailItem label="Ticket No." value={row.ticketNo} />
+                  <DetailItem label="Transaction Code" value={row.transactionCode} />
+                  <DetailItem label="Transaction Action" value={row.action} />
+                  <DetailItem label="Violation / Case" value={row.violation} />
+                  <DetailItem label="Amount Paid" value={formatMoney(row.amountPaid)} />
+                  <DetailItem label="Payment Method" value={row.paymentMethod} />
+                  <DetailItem label="OR Number" value={row.orNumber} />
+                  <DetailItem label="Status" value={<StatusBadge status={row.status} />} />
+                  <DetailItem label="TFRO Personnel" value={row.tfroPersonnel} />
+                  <DetailItem label="Remarks" value={row.remarks} />
+                </div>
+              </div>
+
+              <div className="bg-white border rounded-4 p-3 mb-3">
+                <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                  <div>
+                    <div className="fw-bold">Uploaded Receipts / Documents</div>
+                    <div className="small text-muted">
+                      Admin can upload missing receipt or delete the wrong upload, then upload the correct file.
+                    </div>
+                  </div>
+
+                  <span className="badge rounded-pill bg-light text-dark border">
+                    {uploads.length} file(s)
+                  </span>
+                </div>
+
+                {uploadLoading ? (
+                  <div className="text-muted py-3">Loading uploads...</div>
+                ) : uploads.length === 0 ? (
+                  <div className="text-muted py-3">
+                    No receipt or document uploaded yet.
+                  </div>
+                ) : (
+                  <>
+                    {receiptUploads.length > 0 && (
+                      <UploadGroup
+                        title="Payment Receipt"
+                        uploads={receiptUploads}
+                        uploadSaving={uploadSaving}
+                        onDeleteUpload={onDeleteUpload}
+                      />
+                    )}
+
+                    {documentUploads.length > 0 && (
+                      <UploadGroup
+                        title="Other Documents"
+                        uploads={documentUploads}
+                        uploadSaving={uploadSaving}
+                        onDeleteUpload={onDeleteUpload}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="bg-white border rounded-4 p-3">
+                <div className="fw-bold mb-3">Upload / Change Receipt</div>
+
+                <div className="row g-3">
+                  <div className="col-md-4">
+                    <label className="form-label small text-muted">Upload Type</label>
+                    <select
+                      className="form-select rounded-4"
+                      value={uploadCategory}
+                      onChange={(e) => setUploadCategory(e.target.value)}
+                      disabled={uploadSaving}
+                    >
+                      <option value="PAYMENT_RECEIPT">Payment Receipt</option>
+                      <option value="TRANSACTION_DOCUMENT">Transaction Document</option>
+                      <option value="ORDER_OF_PAYMENT">Order of Payment</option>
+                      <option value="RELEASE_SLIP">Release Slip</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+
+                  <div className="col-md-8">
+                    <label className="form-label small text-muted">Choose File</label>
+                    <input
+                      key={fileInputKey}
+                      type="file"
+                      className="form-control rounded-4"
+                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                      disabled={uploadSaving}
+                      onChange={(e) =>
+                        setSelectedUploadFile(e.target.files?.[0] || null)
+                      }
+                    />
+
+                    <div className="small text-muted mt-2">
+                      Allowed: image, PDF, DOCX, XLSX, TXT.
+                    </div>
+
+                    {selectedUploadFile && (
+                      <div className="small text-success mt-1">
+                        Selected: {selectedUploadFile.name}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer border-0 d-flex justify-content-between">
+              <button
+                className="btn btn-light rounded-4 px-4"
+                type="button"
+                onClick={onClose}
+                disabled={uploadSaving}
+              >
+                Close
+              </button>
+
+              <button
+                className="btn btn-primary rounded-4 px-4"
+                type="button"
+                onClick={onUpload}
+                disabled={uploadSaving || !selectedUploadFile}
+              >
+                {uploadSaving ? "Uploading..." : "Upload File"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+function UploadGroup({ title, uploads, uploadSaving, onDeleteUpload }) {
+  return (
+    <div className="mb-3">
+      <div className="fw-semibold mb-2">{title}</div>
+
+      <div className="table-responsive">
+        <table className="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Type</th>
+              <th>Size</th>
+              <th>Uploaded At</th>
+              <th className="text-end">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {uploads.map((upload) => {
+              const fileUrl = getUploadUrl(upload);
+
+              return (
+                <tr key={upload.id}>
+                  <td>
+                    <div className="fw-semibold">
+                      {upload.original_name || "Uploaded file"}
+                    </div>
+                    <div className="small text-muted">
+                      {upload.file_type || "—"}
+                    </div>
+                  </td>
+
+                  <td>{getUploadCategoryLabel(upload.category)}</td>
+                  <td>{formatFileSize(upload.file_size)}</td>
+                  <td>{formatDateTime(upload.created_at)}</td>
+
+                  <td className="text-end">
+                    {fileUrl && (
+                      <a
+                        className="btn btn-sm btn-outline-primary rounded-4 px-3 me-2"
+                        href={fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open
+                      </a>
+                    )}
+
+                    <button
+                      className="btn btn-sm btn-outline-danger rounded-4 px-3"
+                      type="button"
+                      onClick={() => onDeleteUpload(upload)}
+                      disabled={uploadSaving}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

@@ -55,11 +55,11 @@ export default function DriverFormModal({ show, mode, onClose, onSubmit }) {
     form.address.trim() &&
     form.contact_number.trim();
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     if (!canSubmit) return;
 
-    onSubmit({
+    await onSubmit({
       classification: mode === "COLORUM" ? "COLORUM" : form.classification,
       operator_name: form.operator_name.trim() || null,
       first_name: form.first_name.trim(),
@@ -73,10 +73,9 @@ export default function DriverFormModal({ show, mode, onClose, onSubmit }) {
       license_number: form.license_number.trim() || null,
       license_expiry: form.license_expiry || null,
       photo_url: null,
+      photoFile: form.photoFile,
       status: "ACTIVE",
     });
-
-    onClose();
   }
 
   return (

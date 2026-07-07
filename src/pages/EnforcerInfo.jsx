@@ -26,6 +26,32 @@ async function apiRequest(path, options = {}) {
   return data;
 }
 
+async function uploadFileRequest(file, payload) {
+  const token = getToken();
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("category", payload.category);
+  formData.append("related_type", payload.related_type);
+  formData.append("related_id", payload.related_id);
+
+  const res = await fetch(`${API_BASE_URL}/uploads`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(data?.message || "Upload failed");
+  }
+
+  return data;
+}
+
 function splitFullName(fullName = "") {
   const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
 
@@ -306,16 +332,62 @@ export default function EnforcerInfo() {
     };
   }
 
-  function handlePhotoUpload(e) {
+  async function handlePhotoUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const photoUrl = URL.createObjectURL(file);
+    try {
+      setSaving(true);
+      setError("");
 
-    setDraft((prev) => ({
-      ...prev,
-      photoUrl,
-    }));
+      const uploadResponse = await uploadFileRequest(file, {
+        category: "PROFILE_PHOTO",
+        related_type: "ENFORCER",
+        related_id: id,
+      });
+
+      const photoUrl =
+        uploadResponse?.data?.secure_url ||
+        uploadResponse?.data?.file_url ||
+        "";
+
+      if (!photoUrl) {
+        throw new Error("Upload succeeded but no photo URL was returned.");
+      }
+
+      const nameParts = splitFullName(draft.name);
+
+      await apiRequest(`/enforcers/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          first_name: nameParts.first_name,
+          middle_name: nameParts.middle_name,
+          last_name: nameParts.last_name,
+          suffix: nameParts.suffix,
+          contact_number: draft.contact || null,
+          address: draft.address || null,
+          photo_url: photoUrl,
+          status: draft.status || "ACTIVE",
+        }),
+      });
+
+      setDraft((prev) => ({
+        ...prev,
+        photoUrl,
+      }));
+
+      setEnforcer((prev) => ({
+        ...prev,
+        photoUrl,
+      }));
+
+      alert("Profile photo uploaded successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to upload profile photo");
+    } finally {
+      setSaving(false);
+      e.target.value = "";
+    }
   }
 
   async function handleSave() {
@@ -493,6 +565,7 @@ export default function EnforcerInfo() {
                         type="file"
                         accept="image/*"
                         hidden
+                        disabled={saving}
                         onChange={handlePhotoUpload}
                       />
                     </label>

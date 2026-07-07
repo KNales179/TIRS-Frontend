@@ -47,6 +47,8 @@ export default function ViewVehicleCard({
     setIsEditing(false);
   }
 
+  const currentStatus = String(vehicle?.status || "").toUpperCase();
+
   return (
     <>
       <div className="modal fade show d-block" tabIndex={-1}>
@@ -123,6 +125,15 @@ export default function ViewVehicleCard({
 
                 <button type="button" className="btn btn-outline-secondary rounded-4 px-4" onClick={() => onMarkStatus(vehicle, "INACTIVE")} disabled={saving}>
                   Mark Inactive
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-outline-success rounded-4 px-4"
+                  onClick={() => onMarkStatus(vehicle, "REGISTERED")}
+                  disabled={saving || currentStatus === "REGISTERED"}
+                >
+                  Restore Status
                 </button>
               </div>
 
