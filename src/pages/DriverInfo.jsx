@@ -1,7 +1,7 @@
 // pages/DriverInfo.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
-import { getToken } from "../data/auth";
+import { getToken, getUser } from "../data/auth";
 import AddVehicleModal from "../components/driverInfo/addVehicle";
 import ViewVehicleCard from "../components/driverInfo/viewVehicleCard";
 
@@ -289,6 +289,35 @@ function displayStatus(status) {
   return "New";
 }
 
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+
+  if (!size) return "—";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  return String(value).replace("T", " ").slice(0, 16);
+}
+
+function getUploadUrl(upload) {
+  return upload?.secure_url || upload?.file_url || "";
+}
+
+function canPreviewInBrowser(fileType = "") {
+  const type = String(fileType || "").toLowerCase();
+
+  return (
+    type.startsWith("image/") ||
+    type === "application/pdf" ||
+    type === "text/plain"
+  );
+}
+
 function normalizeApprehension(item) {
   const violations = item.violations || [];
   const enforcers = item.enforcers || [];
@@ -365,6 +394,10 @@ export default function DriverInfo() {
   const [driver, setDriver] = useState(null);
   const [draft, setDraft] = useState(null);
   const [apprehensions, setApprehensions] = useState([]);
+  const [driverDocuments, setDriverDocuments] = useState([]);
+  const [documentFile, setDocumentFile] = useState(null);
+  const [documentLoading, setDocumentLoading] = useState(false);
+  const [documentViewer, setDocumentViewer] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -395,6 +428,31 @@ export default function DriverInfo() {
     color: "",
   });
 
+  const currentUser = getUser();
+  const canManageDriverDocuments = ["SUPER_ADMIN", "ADMIN"].includes(
+    String(currentUser?.role || "").toUpperCase()
+  );
+
+  async function fetchDriverDocuments() {
+    if (!canManageDriverDocuments) return;
+
+    try {
+      setDocumentLoading(true);
+
+      const response = await apiRequest(
+        `/uploads?related_type=DRIVER&related_id=${encodeURIComponent(
+          id
+        )}&category=DRIVER_DOCUMENT`
+      );
+
+      setDriverDocuments(response.data || []);
+    } catch (err) {
+      setError(err.message || "Failed to load driver documents");
+      setDriverDocuments([]);
+    } finally {
+      setDocumentLoading(false);
+    }
+  }
 
   async function fetchDriver() {
     try {
@@ -413,6 +471,9 @@ export default function DriverInfo() {
       setDriver(normalized);
       setDraft(normalized);
       setApprehensions(apprehensionList.map(normalizeApprehension));
+      if (canManageDriverDocuments) {
+        await fetchDriverDocuments();
+      }
       setSelectedVehicleIndex(0);
       setSelectedFranchiseId(normalized.franchises?.[0]?.id || "");
       setIsEdit(false);
@@ -434,6 +495,84 @@ export default function DriverInfo() {
       </div>
     );
   }
+
+  async function getUploadBlobUrl(upload, download = false) {
+    const token = getToken();
+
+    const res = await fetch(
+      `${API_BASE_URL}/uploads/${upload.id}/file${download ? "?download=1" : ""}`,
+      {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      }
+    );
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.message || "Failed to open file");
+    }
+
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  }
+
+  function downloadBlobUrl(blobUrl, fileName) {
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = fileName || "document";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  }
+
+  async function handleDownloadDriverDocument(upload) {
+    try {
+      setSaving(true);
+      setError("");
+
+      const blobUrl = await getUploadBlobUrl(upload, true);
+      downloadBlobUrl(blobUrl, upload.original_name || "document");
+    } catch (err) {
+      setError(err.message || "Failed to download document");
+    } finally {
+      setSaving(false);
+  }
+}
+
+async function handleViewDriverDocument(upload) {
+  try {
+    setSaving(true);
+    setError("");
+
+    if (!canPreviewInBrowser(upload.file_type)) {
+      const blobUrl = await getUploadBlobUrl(upload, true);
+      downloadBlobUrl(blobUrl, upload.original_name || "document");
+      return;
+    }
+
+    const blobUrl = await getUploadBlobUrl(upload, false);
+
+    setDocumentViewer({
+      ...upload,
+      preview_url: blobUrl,
+    });
+  } catch (err) {
+    setError(err.message || "Failed to open document");
+  } finally {
+    setSaving(false);
+  }
+}
+
+function handleCloseDocumentViewer() {
+  if (documentViewer?.preview_url) {
+    URL.revokeObjectURL(documentViewer.preview_url);
+  }
+
+  setDocumentViewer(null);
+}
 
   if (error || !driver || !draft) {
     return (
@@ -822,6 +961,66 @@ export default function DriverInfo() {
     }
   }
 
+  async function handleUploadDriverDocument() {
+    if (!documentFile) {
+      alert("Please choose a document first.");
+      return;
+    }
+
+    if (!canManageDriverDocuments) {
+      alert("Only ADMIN and SUPER_ADMIN can upload driver documents.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+
+      await uploadFileRequest(documentFile, {
+        category: "DRIVER_DOCUMENT",
+        related_type: "DRIVER",
+        related_id: id,
+      });
+
+      setDocumentFile(null);
+      await fetchDriverDocuments();
+
+      alert("Driver document uploaded successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to upload driver document");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteDriverDocument(upload) {
+    if (!upload?.id) return;
+
+    if (!confirm("Delete this driver document?")) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+
+      await apiRequest(`/uploads/${upload.id}`, {
+        method: "DELETE",
+      });
+
+      await fetchDriverDocuments();
+      alert("Driver document deleted.");
+    } catch (err) {
+      setError(err.message || "Failed to delete driver document");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleViewDriverDocument(upload) {
+    setDocumentViewer(upload);
+  }
+
   function handleOpenAddApprehension() {
     nav("/violations", {
       state: {
@@ -1079,6 +1278,110 @@ export default function DriverInfo() {
                       View Transaction Details
                     </Link>
                   </div>
+
+                  {canManageDriverDocuments && (
+                    <div className="col-12 mt-4 no-print">
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <div>
+                          <div className="fw-semibold mb-0">Driver Documents</div>
+                          <div className="small text-muted">
+                            Upload and view general driver documents only. Receipts and transaction files are not shown here.
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border rounded-4 p-3 mb-3 bg-light">
+                        <div className="row g-2 align-items-end">
+                          <div className="col-md-9">
+                            <label className="form-label small text-muted">
+                              Upload Document
+                            </label>
+                            <input
+                              type="file"
+                              className="form-control rounded-4 bg-white"
+                              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                              disabled={saving}
+                              onChange={(e) => setDocumentFile(e.target.files?.[0] || null)}
+                            />
+
+                            {documentFile && (
+                              <div className="small text-success mt-1">
+                                Selected: {documentFile.name}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="col-md-3">
+                            <button
+                              className="btn btn-primary rounded-4 w-100"
+                              type="button"
+                              disabled={saving || !documentFile}
+                              onClick={handleUploadDriverDocument}
+                            >
+                              {saving ? "Uploading..." : "Upload"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="table-responsive">
+                        <table className="tfro-table">
+                          <thead>
+                            <tr className="text-white" style={{ background: "#000000" }}>
+                              <th className="text-white">Document Name</th>
+                              <th className="text-white">Type</th>
+                              <th className="text-white">Size</th>
+                              <th className="text-white">Uploaded At</th>
+                              <th className="text-white text-end">Actions</th>
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {documentLoading ? (
+                              <tr>
+                                <td colSpan="5" className="text-center text-muted py-4">
+                                  Loading documents...
+                                </td>
+                              </tr>
+                            ) : driverDocuments.length === 0 ? (
+                              <tr>
+                                <td colSpan="5" className="text-center text-muted py-4">
+                                  No driver documents uploaded yet.
+                                </td>
+                              </tr>
+                            ) : (
+                              driverDocuments.map((doc) => (
+                                <tr key={doc.id}>
+                                  <td>{doc.original_name || "Uploaded document"}</td>
+                                  <td>{doc.file_type || "—"}</td>
+                                  <td>{formatFileSize(doc.file_size)}</td>
+                                  <td>{formatDateTime(doc.created_at)}</td>
+                                  <td className="text-end">
+                                    <button
+                                      className="btn btn-sm btn-outline-primary rounded-4 px-3 me-2"
+                                      type="button"
+                                      onClick={() => handleViewDriverDocument(doc)}
+                                    >
+                                      View
+                                    </button>
+
+                                    <button
+                                      className="btn btn-sm btn-outline-danger rounded-4 px-3"
+                                      type="button"
+                                      disabled={saving}
+                                      onClick={() => handleDeleteDriverDocument(doc)}
+                                    >
+                                      Delete
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
           </div>
         </div>
@@ -1126,6 +1429,12 @@ export default function DriverInfo() {
           saving={saving}
         />
       )}
+      <DocumentViewerModal
+        upload={documentViewer}
+        onClose={handleCloseDocumentViewer}
+        onDownload={handleDownloadDriverDocument}
+      />
+
     </div>
   );
 }
@@ -1294,5 +1603,92 @@ function FormInput({ label, value, onChange, placeholder = "", type = "text" }) 
         onChange={(e) => onChange(e.target.value)}
       />
     </div>
+  );
+}
+
+function DocumentViewerModal({ upload, onClose, onDownload }) {
+  if (!upload) return null;
+
+  const fileUrl = upload.preview_url;
+  const canPreview = canPreviewInBrowser(upload.file_type);
+
+  return (
+    <>
+      <div className="modal fade show d-block" tabIndex="-1">
+        <div className="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+          <div className="modal-content border-0 rounded-4 shadow">
+            <div className="modal-header border-0">
+              <div>
+                <h5 className="modal-title fw-bold">
+                  {upload.original_name || "Driver Document"}
+                </h5>
+                <div className="small text-muted">
+                  {upload.file_type || "—"} • {formatFileSize(upload.file_size)}
+                </div>
+              </div>
+
+              <button type="button" className="btn-close" onClick={onClose} />
+            </div>
+
+            <div className="modal-body">
+              {!fileUrl ? (
+                <div className="alert alert-warning rounded-4">
+                  File preview is unavailable.
+                </div>
+              ) : canPreview ? (
+                upload.file_type?.startsWith("image/") ? (
+                  <div className="text-center">
+                    <img
+                      src={fileUrl}
+                      alt={upload.original_name || "Driver document"}
+                      style={{
+                        maxWidth: "100%",
+                        maxHeight: "70vh",
+                        objectFit: "contain",
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <iframe
+                    src={fileUrl}
+                    title={upload.original_name || "Driver document"}
+                    style={{
+                      width: "100%",
+                      height: "70vh",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 16,
+                    }}
+                  />
+                )
+              ) : (
+                <div className="alert alert-info rounded-4 mb-0">
+                  This file type cannot be previewed directly. Download it instead.
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer border-0">
+              <button
+                type="button"
+                className="btn btn-light rounded-4 px-4"
+                onClick={onClose}
+              >
+                Close
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary rounded-4 px-4"
+                onClick={() => onDownload(upload)}
+              >
+                Download Original File
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop fade show" />
+    </>
   );
 }
